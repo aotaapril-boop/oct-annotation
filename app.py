@@ -99,7 +99,7 @@ HEADER_ROW = [
     "extrafovea_VRI", "extrafovea_intraretinal", "extrafovea_outer_retina",
     "extrafovea_choroid",
     "L1_note", "negative_findings",
-    "L2_abnormality", "L3_management", "L3_note", "caption",
+    "L2_abnormality", "L3_management", "L3_note", "caption", "auto_caption",
     "raw_json",
 ]
 
@@ -265,8 +265,159 @@ def flatten_to_row(data):
     row["L3_management"] = data.get("L3_mgmt", "")
     row["L3_note"] = data.get("L3_note", "")
     row["caption"] = data.get("caption", "")
+    row["auto_caption"] = generate_caption(data)
     row["raw_json"] = json.dumps(data, ensure_ascii=False)
     return row
+
+# ─── Auto Caption Generation ─────────────────────────────────
+
+# Abbreviation -> full name mapping for readable captions
+FINDING_FULL_NAMES = {
+    "SRF": "subretinal fluid",
+    "IRF": "intraretinal fluid",
+    "PVD": "posterior vitreous detachment",
+    "ERM": "epiretinal membrane",
+    "VMT": "vitreomacular traction",
+    "VH": "vitreous hemorrhage",
+    "HRF": "hyperreflective foci",
+    "SHRM": "subretinal hyperreflective material",
+    "EZ disruption": "ellipsoid zone disruption",
+    "serous PED": "serous pigment epithelial detachment",
+    "hard exudates": "hard exudates",
+    "retinal thickening": "retinal thickening",
+    "tractional thickening": "tractional thickening",
+    "inner thinning": "inner retinal thinning",
+    "hemorrhage": "hemorrhage",
+    "outer atrophy": "outer retinal atrophy",
+    "drusen": "drusen",
+    "choroidal thickening": "choroidal thickening",
+    "choroidal thinning": "choroidal thinning",
+}
+
+NEG_FULL_NAMES = {
+    "no SRF": "subretinal fluid",
+    "no IRF": "intraretinal fluid",
+    "no PED": "pigment epithelial detachment",
+    "EZ intact": "ellipsoid zone disruption",
+    "no ERM": "epiretinal membrane",
+}
+
+# Location labels -> readable location text
+LOCATION_MAP = {
+    "fovea_VRI": "vitreoretinal interface at the fovea",
+    "fovea_intraretinal": "intraretinal layers at the fovea",
+    "fovea_outer_retina": "outer retina at the fovea",
+    "extrafovea_VRI": "vitreoretinal interface in the extrafoveal area",
+    "extrafovea_intraretinal": "intraretinal layers in the extrafoveal area",
+    "extrafovea_outer_retina": "outer retina in the extrafoveal area",
+    "extrafovea_choroid": "choroid in the extrafoveal area",
+}
+
+
+def _join_english_list(items):
+    """Join list into English: 'a', 'a and b', 'a, b, and c'."""
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + ", and " + items[-1]
+
+
+def _expand_finding(name):
+    """Expand abbreviation to full name, or return as-is."""
+    return FINDING_FULL_NAMES.get(name, name)
+
+
+def generate_caption(data):
+    """Generate a deterministic English caption from structured annotation data.
+
+    Rules:
+    - Only use information present in the data
+    - No diagnostic interpretation or inference
+    - Deterministic: same input always produces same output
+    """
+    sentences = []
+
+    # 1. Image quality
+    quality = (data.get("quality") or "").strip().lower()
+    if quality == "good":
+        sentences.append("Image quality is sufficient for evaluation.")
+    elif quality == "fair":
+        sentences.append("Image quality is limited but adequate for evaluation.")
+    elif quality == "poor":
+        sentences.append("The image is not adequate for full evaluation.")
+
+    # 2. Abnormality presence
+    abnormality = (data.get("L2") or "").strip().lower()
+    if abnormality == "normal":
+        sentences.append("No abnormal findings are present.")
+    elif abnormality == "abnormal":
+        sentences.append("Abnormal findings are present.")
+    elif abnormality == "uncertain":
+        sentences.append("The presence of abnormality is uncertain.")
+
+    # 3. Location + 4. Positive findings — collect per location
+    loc_findings = data.get("L1_loc_findings", {})
+    all_findings = []  # (location_label, [findings])
+    for loc_key, loc_data in sorted(loc_findings.items()):
+        if not isinstance(loc_data, dict):
+            continue
+        loc_short = "fovea" if "Fovea" in loc_key else "extrafovea"
+        for cat_name, findings_list in sorted(loc_data.items()):
+            if not findings_list:
+                continue
+            base = cat_name.replace("-1", "").replace("-2", "")
+            if "VRI" in base:
+                loc_label = f"{loc_short}_VRI"
+            elif "Intraretinal" in base:
+                loc_label = f"{loc_short}_intraretinal"
+            elif "Outer" in base:
+                loc_label = f"{loc_short}_outer_retina"
+            elif "Choroid" in base:
+                loc_label = f"{loc_short}_choroid"
+            else:
+                loc_label = loc_short
+            all_findings.append((loc_label, findings_list))
+
+    # Merge findings by location
+    merged = {}
+    for loc_label, findings_list in all_findings:
+        if loc_label not in merged:
+            merged[loc_label] = []
+        merged[loc_label].extend(findings_list)
+
+    # Build location + findings sentences
+    for loc_label in sorted(merged.keys()):
+        findings_list = merged[loc_label]
+        expanded = [_expand_finding(f) for f in findings_list if f and f != "other"]
+        if not expanded:
+            continue
+        location_text = LOCATION_MAP.get(loc_label, loc_label.replace("_", " "))
+        findings_text = _join_english_list(expanded)
+        sentences.append(
+            f"{findings_text.capitalize()} {'is' if len(expanded) == 1 else 'are'} "
+            f"observed in the {location_text}."
+        )
+
+    # 5. Negative findings
+    neg_list = data.get("L1_neg", [])
+    if neg_list:
+        neg_expanded = []
+        for n in neg_list:
+            full = NEG_FULL_NAMES.get(n)
+            if full:
+                neg_expanded.append(full)
+        if len(neg_expanded) == 1:
+            sentences.append(f"No {neg_expanded[0]} is observed.")
+        elif len(neg_expanded) == 2:
+            sentences.append(f"No {neg_expanded[0]} or {neg_expanded[1]} is observed.")
+        elif len(neg_expanded) > 2:
+            neg_text = ", ".join(neg_expanded[:-1]) + ", or " + neg_expanded[-1]
+            sentences.append(f"No {neg_text} is observed.")
+
+    return " ".join(sentences)
 
 # ─── Findings definitions ────────────────────────────────────
 
@@ -530,6 +681,20 @@ mgmt = st.radio(
 l3_note = st.text_input("L3 note", value=saved.get("L3_note", saved.get("L4_note", "")), key=f"{K}l3n")
 
 st.markdown("---")
+
+# Auto-generate caption from current form state
+def _build_preview_data():
+    return {
+        "quality": quality, "L2": l2,
+        "L1_loc_findings": loc_findings,
+        "L1_neg": neg_checked,
+    }
+
+col_cap_label, col_cap_btn = st.columns([3, 1])
+col_cap_label.markdown("**Caption**")
+if col_cap_btn.button("Auto Generate", key=f"{K}auto_cap"):
+    st.session_state[f"{K}cap"] = generate_caption(_build_preview_data())
+    st.rerun()
 
 caption = st.text_area("Caption", value=saved.get("caption", ""), height=60, key=f"{K}cap")
 
