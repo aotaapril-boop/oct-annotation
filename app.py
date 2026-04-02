@@ -674,7 +674,7 @@ if col_cap_btn.button("Auto Generate", key=f"{K}auto_cap"):
     st.session_state[f"{K}cap"] = generate_caption(_build_preview_data())
     st.rerun()
 
-caption = st.text_area("Caption", value=saved.get("caption", ""), height=120, key=f"{K}cap")
+caption = st.text_area("Caption", value=saved.get("caption", ""), height=300, key=f"{K}cap")
 
 # ── Save ──
 def build_data():
