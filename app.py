@@ -97,8 +97,8 @@ HEADER_ROW = [
     "fovea_VRI", "fovea_intraretinal", "fovea_outer_retina",
     "extrafovea_VRI", "extrafovea_intraretinal", "extrafovea_outer_retina",
     "extrafovea_choroid",
-    "L1_note", "negative_findings",
-    "L2_abnormality", "L3_management", "L3_note", "caption", "auto_caption",
+    "negative_findings",
+    "L2_abnormality", "L3_management", "caption", "auto_caption",
     "raw_json",
 ]
 
@@ -258,11 +258,11 @@ def flatten_to_row(data):
                 else:
                     cat_short = base_cat
                 row[f"{loc_short}_{cat_short}"] = "; ".join(findings) if findings else ""
-    row["L1_note"] = data.get("L1_pos_note", "")
+
     row["negative_findings"] = "; ".join(data.get("L1_neg", []))
     row["L2_abnormality"] = data.get("L2", "")
     row["L3_management"] = data.get("L3_mgmt", "")
-    row["L3_note"] = data.get("L3_note", "")
+
     row["caption"] = data.get("caption", "")
     row["auto_caption"] = generate_caption(data)
     row["raw_json"] = json.dumps(data, ensure_ascii=False)
@@ -579,10 +579,6 @@ st.markdown('<div class="extrafovea-block">', unsafe_allow_html=True)
 loc_findings[extra_label] = render_category(extra_label, EXTRAFOVEA_CATEGORIES, "ext", saved_extra)
 st.markdown('</div>', unsafe_allow_html=True)
 
-pos_note = st.text_input(
-    "Note", value=saved.get("L1_pos_note", saved.get("L2_pos_note", "")),
-    key=f"{K}pos_note",
-)
 
 # Recalculate positives from actual rendered checkboxes (for has_findings & save)
 all_positive = set()
@@ -639,7 +635,6 @@ mgmt = st.radio(
     index=mgmt_opts.index(saved_mgmt) if saved_mgmt in mgmt_opts else 0,
     horizontal=True, key=f"{K}mgmt", label_visibility="collapsed",
 )
-l3_note = st.text_input("L3 note", value=saved.get("L3_note", saved.get("L4_note", "")), key=f"{K}l3n")
 
 st.markdown("---")
 
@@ -665,9 +660,8 @@ def build_data():
         "scan_type": scan_type, "scan_loc": scan_loc, "quality": quality,
         "L1_loc_findings": loc_findings,
         "L2": l2,
-        "L1_pos_note": pos_note,
         "L1_neg": neg_checked,
-        "L3_mgmt": mgmt, "L3_note": l3_note,
+        "L3_mgmt": mgmt,
         "caption": caption,
     }
 
