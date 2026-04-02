@@ -388,7 +388,7 @@ def generate_caption(data):
 FOVEA_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH", "other"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
-    "Intraretinal-2":   ["inner thinning", "HRF", "hard exudates", "other"],
+    "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates", "other"],
     "Outer retina-1":   ["SRF", "serous PED", "SHRM", "EZ disruption"],
     "Outer retina-2":   ["outer atrophy", "drusen", "other"],
 }
@@ -396,7 +396,7 @@ FOVEA_CATEGORIES = {
 EXTRAFOVEA_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH", "other"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
-    "Intraretinal-2":   ["inner thinning", "HRF", "hard exudates", "other"],
+    "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates", "other"],
     "Outer retina-1":   ["SRF", "serous PED", "SHRM", "EZ disruption"],
     "Outer retina-2":   ["outer atrophy", "drusen", "other"],
     "Choroid":          ["choroidal thickening", "choroidal thinning", "other"],
