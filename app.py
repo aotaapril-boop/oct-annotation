@@ -385,20 +385,20 @@ def generate_caption(data):
 # ─── Findings definitions ────────────────────────────────────
 
 FOVEA_CATEGORIES = {
-    "VRI":              ["PVD", "ERM", "VMT", "VH", "other"],
+    "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
-    "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates", "other"],
+    "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
     "Outer retina-1":   ["SRF", "serous PED", "SHRM", "EZ disruption"],
-    "Outer retina-2":   ["outer atrophy", "drusen", "other"],
+    "Outer retina-2":   ["outer atrophy", "drusen"],
 }
 
 EXTRAFOVEA_CATEGORIES = {
-    "VRI":              ["PVD", "ERM", "VMT", "VH", "other"],
+    "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
-    "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates", "other"],
+    "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
     "Outer retina-1":   ["SRF", "serous PED", "SHRM", "EZ disruption"],
-    "Outer retina-2":   ["outer atrophy", "drusen", "other"],
-    "Choroid":          ["choroidal thickening", "choroidal thinning", "other"],
+    "Outer retina-2":   ["outer atrophy", "drusen"],
+    "Choroid":          ["choroidal thickening", "choroidal thinning"],
 }
 
 NEG_FINDINGS = ["no SRF", "no IRF", "no PED", "EZ intact", "no ERM"]
