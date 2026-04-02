@@ -18,28 +18,26 @@ import gspread
 
 st.set_page_config(page_title="OCT Annotation", layout="wide")
 
-st.markdown("""
+sidebar_width = st.session_state.get("sidebar_w", 500)
+
+st.markdown(f"""
 <style>
-/* Sidebar: show image, fixed position, no scroll */
-[data-testid="stSidebar"] {
-    min-width: 350px !important;
-    max-width: 800px !important;
-    resize: horizontal;
-    overflow: hidden !important;
-}
-[data-testid="stSidebar"] > div:first-child {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
-}
-.block-container { padding-top: 1rem; padding-bottom: 0rem; }
-h3 { margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }
-hr { margin-top: 0.2rem; margin-bottom: 0.2rem; }
-[data-testid="stCheckbox"] { margin-bottom: -0.8rem; }
-[data-testid="stRadio"] > div { margin-top: -0.5rem; }
-.fovea-block { background-color: #f0f4ff; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }
-.extrafovea-block { background-color: #fff8f0; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }
+/* Sidebar: fixed width controlled by slider */
+[data-testid="stSidebar"] {{
+    min-width: {sidebar_width}px !important;
+    max-width: {sidebar_width}px !important;
+    width: {sidebar_width}px !important;
+}}
+[data-testid="stSidebar"] > div:first-child {{
+    width: {sidebar_width}px !important;
+}}
+.block-container {{ padding-top: 1rem; padding-bottom: 0rem; }}
+h3 {{ margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }}
+hr {{ margin-top: 0.2rem; margin-bottom: 0.2rem; }}
+[data-testid="stCheckbox"] {{ margin-bottom: -0.8rem; }}
+[data-testid="stRadio"] > div {{ margin-top: -0.5rem; }}
+.fovea-block {{ background-color: #f0f4ff; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }}
+.extrafovea-block {{ background-color: #fff8f0; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -446,6 +444,7 @@ total = len(images)
 
 # ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
 
+st.sidebar.slider("Image panel width", min_value=300, max_value=800, value=500, step=50, key="sidebar_w")
 annotator = st.sidebar.text_input("Annotator name", value="default")
 
 if not annotator or annotator.strip() == "":
