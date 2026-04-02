@@ -155,9 +155,12 @@ def _get_or_create_sheet(annotator):
     # Use the first sheet (Sheet1)
     ws = sh.sheet1
 
-    first_cell = ws.acell("A1").value
+    try:
+        first_cell = ws.acell("A1").value
+    except Exception:
+        first_cell = None
     if first_cell != "image":
-        ws.insert_row(HEADER_ROW, 1, value_input_option="RAW")
+        ws.update("A1", [HEADER_ROW], value_input_option="RAW")
 
     st.session_state[cache_key] = ws
     return ws
