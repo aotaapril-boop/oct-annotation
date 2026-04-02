@@ -380,6 +380,15 @@ def generate_caption(data):
             neg_text = _join_english_list(valid_neg)
             sentences.append(f"Negative findings: {neg_text}.")
 
+    # 6. Management
+    mgmt = (data.get("L3_mgmt") or "").strip().lower()
+    if mgmt == "observation":
+        sentences.append("Observation is recommended.")
+    elif mgmt == "further exam":
+        sentences.append("Further examination is recommended.")
+    elif mgmt == "treatment":
+        sentences.append("Treatment is recommended.")
+
     return " ".join(sentences)
 
 # ─── Findings definitions ────────────────────────────────────
@@ -656,6 +665,7 @@ def _build_preview_data():
         "quality": quality, "L2": l2,
         "L1_loc_findings": loc_findings,
         "L1_neg": neg_checked,
+        "L3_mgmt": mgmt,
     }
 
 col_cap_label, col_cap_btn = st.columns([3, 1])
