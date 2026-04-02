@@ -152,11 +152,8 @@ def _get_or_create_sheet(annotator):
         ).execute())
         sh = _api_call_with_retry(lambda: gc.open_by_key(created["id"]))
 
-    try:
-        ws = sh.worksheet("annotations")
-    except gspread.exceptions.WorksheetNotFound:
-        ws = sh.add_worksheet(title="annotations", rows=1000, cols=len(HEADER_ROW))
-        ws.append_row(HEADER_ROW, value_input_option="RAW")
+    # Use the first sheet (Sheet1)
+    ws = sh.sheet1
 
     first_cell = ws.acell("A1").value
     if first_cell != "image":
