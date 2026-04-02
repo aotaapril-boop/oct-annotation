@@ -271,36 +271,8 @@ def flatten_to_row(data):
 
 # ─── Auto Caption Generation ─────────────────────────────────
 
-# Abbreviation -> full name mapping for readable captions
-FINDING_FULL_NAMES = {
-    "SRF": "subretinal fluid",
-    "IRF": "intraretinal fluid",
-    "PVD": "posterior vitreous detachment",
-    "ERM": "epiretinal membrane",
-    "VMT": "vitreomacular traction",
-    "VH": "vitreous hemorrhage",
-    "HRF": "hyperreflective foci",
-    "SHRM": "subretinal hyperreflective material",
-    "EZ disruption": "ellipsoid zone disruption",
-    "serous PED": "serous pigment epithelial detachment",
-    "hard exudates": "hard exudates",
-    "retinal thickening": "retinal thickening",
-    "tractional thickening": "tractional thickening",
-    "inner thinning": "inner retinal thinning",
-    "hemorrhage": "hemorrhage",
-    "outer atrophy": "outer retinal atrophy",
-    "drusen": "drusen",
-    "choroidal thickening": "choroidal thickening",
-    "choroidal thinning": "choroidal thinning",
-}
-
-NEG_FULL_NAMES = {
-    "no SRF": "subretinal fluid",
-    "no IRF": "intraretinal fluid",
-    "no PED": "pigment epithelial detachment",
-    "EZ intact": "ellipsoid zone disruption",
-    "no ERM": "epiretinal membrane",
-}
+# Negative finding labels as-is (no expansion)
+NEG_LABELS = ["no SRF", "no IRF", "no PED", "EZ intact", "no ERM"]
 
 # Location labels -> readable location text
 LOCATION_MAP = {
@@ -326,8 +298,8 @@ def _join_english_list(items):
 
 
 def _expand_finding(name):
-    """Expand abbreviation to full name, or return as-is."""
-    return FINDING_FULL_NAMES.get(name, name)
+    """Return finding name as-is."""
+    return name
 
 
 def generate_caption(data):
@@ -404,18 +376,10 @@ def generate_caption(data):
     # 5. Negative findings
     neg_list = data.get("L1_neg", [])
     if neg_list:
-        neg_expanded = []
-        for n in neg_list:
-            full = NEG_FULL_NAMES.get(n)
-            if full:
-                neg_expanded.append(full)
-        if len(neg_expanded) == 1:
-            sentences.append(f"No {neg_expanded[0]} is observed.")
-        elif len(neg_expanded) == 2:
-            sentences.append(f"No {neg_expanded[0]} or {neg_expanded[1]} is observed.")
-        elif len(neg_expanded) > 2:
-            neg_text = ", ".join(neg_expanded[:-1]) + ", or " + neg_expanded[-1]
-            sentences.append(f"No {neg_text} is observed.")
+        valid_neg = [n for n in neg_list if n and n.strip()]
+        if valid_neg:
+            neg_text = _join_english_list(valid_neg)
+            sentences.append(f"Negative findings: {neg_text}.")
 
     return " ".join(sentences)
 
