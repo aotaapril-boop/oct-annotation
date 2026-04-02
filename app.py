@@ -13,7 +13,6 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build as gapi_build
 from googleapiclient.http import MediaIoBaseDownload
 import gspread
-import streamlit.components.v1 as components
 
 # ─── Config ──────────────────────────────────────────────────
 
@@ -69,9 +68,9 @@ def get_image_list():
     ).execute()
     return [(f["name"], f["id"]) for f in results.get("files", [])]
 
-@st.cache_data(ttl=86400)
+@st.cache_data(ttl=3600, max_entries=20)
 def download_image(file_id):
-    """Download image bytes from Google Drive. Cached for 24h (images don't change)."""
+    """Download image bytes from Google Drive. Cached 1h, max 20 images in memory."""
     service = get_drive_service()
     request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     buf = io.BytesIO()
@@ -471,9 +470,7 @@ st.sidebar.markdown(f"{status} **{idx+1}/{total}** `{current}` (done: {done_coun
 # Show image from Drive
 try:
     img_bytes = download_image(image_ids[current])
-    st.sidebar.image(img_bytes, use_column_width=True)
-    # Preload next 2 images into cache
-    preload_nearby_images(idx, images_info, count=2)
+    st.sidebar.image(img_bytes, use_container_width=True)
 except Exception as e:
     st.sidebar.error(f"Failed to load image: {e}")
 
@@ -690,7 +687,4 @@ if c_next.button("Save & Next ▶", use_container_width=True):
     st.rerun()
 
 # Scroll to top
-components.html(
-    "<script>window.parent.document.querySelector('section.main').scrollTo(0,0);</script>",
-    height=0,
-)
+st.html("<script>window.parent.document.querySelector('section.main').scrollTo(0,0);</script>")
