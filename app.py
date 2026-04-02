@@ -618,6 +618,12 @@ st.markdown("---")
 
 st.markdown("**L2. Abnormality**")
 l2_opts = ["abnormal", "normal", "uncertain"]
+l2_key = f"{K}l2"
+# Auto-switch L2 based on findings
+if has_findings and st.session_state.get(l2_key) == "normal":
+    st.session_state[l2_key] = "abnormal"
+elif not has_findings and st.session_state.get(l2_key) == "abnormal":
+    st.session_state[l2_key] = "normal"
 l2_saved = saved.get("L2", saved.get("L1"))
 if l2_saved and l2_saved in l2_opts:
     l2_default = l2_saved
@@ -625,15 +631,21 @@ elif has_findings:
     l2_default = "abnormal"
 else:
     l2_default = "normal"
-l2 = st.radio("l2", l2_opts, index=l2_opts.index(l2_default), horizontal=True, key=f"{K}l2", label_visibility="collapsed")
+l2 = st.radio("l2", l2_opts, index=l2_opts.index(l2_default), horizontal=True, key=l2_key, label_visibility="collapsed")
 
 st.markdown("**L3. Management**")
 mgmt_opts = ["no abnormality", "observation", "further exam", "treatment"]
+mgmt_key = f"{K}mgmt"
+# Auto-switch L3 based on findings
+if has_findings and st.session_state.get(mgmt_key) == "no abnormality":
+    st.session_state[mgmt_key] = "observation"
+elif not has_findings and st.session_state.get(mgmt_key) in ("observation", "further exam", "treatment"):
+    st.session_state[mgmt_key] = "no abnormality"
 saved_mgmt = saved.get("L3_mgmt", saved.get("L4_mgmt", "no abnormality"))
 mgmt = st.radio(
     "l3", mgmt_opts,
     index=mgmt_opts.index(saved_mgmt) if saved_mgmt in mgmt_opts else 0,
-    horizontal=True, key=f"{K}mgmt", label_visibility="collapsed",
+    horizontal=True, key=mgmt_key, label_visibility="collapsed",
 )
 
 st.markdown("---")
