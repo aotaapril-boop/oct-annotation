@@ -20,7 +20,19 @@ st.set_page_config(page_title="OCT Annotation", layout="wide")
 
 st.markdown("""
 <style>
-[data-testid="stSidebar"] { display: none; }
+/* Sidebar: show image, fixed position, no scroll */
+[data-testid="stSidebar"] {
+    min-width: 350px !important;
+    max-width: 800px !important;
+    resize: horizontal;
+    overflow: hidden !important;
+}
+[data-testid="stSidebar"] > div:first-child {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+}
 .block-container { padding-top: 1rem; padding-bottom: 0rem; }
 h3 { margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }
 hr { margin-top: 0.2rem; margin-bottom: 0.2rem; }
@@ -432,13 +444,12 @@ images = [name for name, _ in images_info]
 image_ids = {name: fid for name, fid in images_info}
 total = len(images)
 
-# ─── Top navigation bar ──────────────────────────────────────
+# ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
 
-nav_cols = st.columns([2, 1, 1, 2, 1])
-annotator = nav_cols[0].text_input("Annotator name", value="default")
+annotator = st.sidebar.text_input("Annotator name", value="default")
 
 if not annotator or annotator.strip() == "":
-    st.warning("Please enter your annotator name.")
+    st.warning("Please enter your annotator name in the sidebar.")
     st.stop()
 
 annotator = annotator.strip()
@@ -446,13 +457,14 @@ annotator = annotator.strip()
 if "idx" not in st.session_state:
     st.session_state.idx = 0
 
-if nav_cols[1].button("◀ Prev", use_container_width=True):
+col_p, col_n, col_jump = st.sidebar.columns([1, 1, 2])
+if col_p.button("◀ Prev"):
     st.session_state.idx = max(0, st.session_state.idx - 1)
-if nav_cols[2].button("Next ▶", use_container_width=True):
+if col_n.button("Next ▶"):
     st.session_state.idx = min(total - 1, st.session_state.idx + 1)
-jump = nav_cols[3].number_input(
-    "Jump to", min_value=1, max_value=total,
-    value=st.session_state.idx + 1,
+jump = col_jump.number_input(
+    "No.", min_value=1, max_value=total,
+    value=st.session_state.idx + 1, label_visibility="collapsed",
 )
 st.session_state.idx = jump - 1
 
@@ -462,7 +474,7 @@ if done_key not in st.session_state:
     with st.spinner("Loading progress..."):
         st.session_state[done_key] = get_done_set(annotator)
 
-if nav_cols[4].button("⏭ Skip", use_container_width=True):
+if st.sidebar.button("⏭ Next incomplete"):
     for i in range(total):
         if images[i] not in st.session_state[done_key]:
             st.session_state.idx = i
@@ -474,28 +486,19 @@ K = f"{current}__{annotator}__"
 
 done_count = len(st.session_state[done_key])
 status = "✅" if current in st.session_state[done_key] else "⬜"
-st.markdown(f"{status} **{idx+1}/{total}** `{current}` (done: {done_count})")
+st.sidebar.markdown(f"{status} **{idx+1}/{total}** `{current}` (done: {done_count})")
 
-# ─── Image width slider ─────────────────────────────────────
-if "img_width" not in st.session_state:
-    st.session_state.img_width = 50
-img_width = st.slider("Image width (%)", min_value=20, max_value=80, value=st.session_state.img_width, key="img_width")
-
-# ─── Left (image) / Right (form) columns ────────────────────
-left_col, right_col = st.columns([img_width, 100 - img_width])
-
-# Show image from Drive
-with left_col:
-    try:
-        img_bytes = download_image(image_ids[current])
-        st.image(img_bytes, use_container_width=True)
-    except Exception as e:
-        st.error(f"Failed to load image: {e}")
+# Show image from Drive (in sidebar — stays visible while scrolling right side)
+try:
+    img_bytes = download_image(image_ids[current])
+    st.sidebar.image(img_bytes, use_container_width=True)
+except Exception as e:
+    st.sidebar.error(f"Failed to load image: {e}")
 
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Main form (in right column) ────────────────────────────
+# ─── Main area: annotation form (scrolls independently) ─────
 
 # ── Pre-scan session_state for positive findings (before rendering) ──
 # This detects which positives are checked from the PREVIOUS render cycle,
@@ -525,190 +528,189 @@ for neg in forced_off_negatives:
     if st.session_state.get(neg_key, False):
         st.session_state[neg_key] = False
 
-with right_col:
-    c1, c2 = st.columns([1, 1])
-    scan_type_opts = ["B-scan", "C-scan", "OCTA", "other"]
-    scan_type = c1.selectbox(
-        "Scan", scan_type_opts,
-        index=scan_type_opts.index(saved.get("scan_type", "B-scan"))
-        if saved.get("scan_type") in scan_type_opts else 0,
-        key=f"{K}st",
-    )
-    scan_loc_opts = ["macula", "optic disc", "periphery", "other"]
-    scan_loc = c2.selectbox(
-        "Location", scan_loc_opts,
-        index=scan_loc_opts.index(saved.get("scan_loc", "macula"))
-        if saved.get("scan_loc") in scan_loc_opts else 0,
-        key=f"{K}sl",
-    )
-    saved_quality = saved.get("quality", "good")
-    quality_opts = ["good", "fair", "poor"]
-    quality = st.radio(
-        "**Quality**", quality_opts,
-        index=quality_opts.index(saved_quality) if saved_quality in quality_opts else 0,
-        horizontal=True, key=f"{K}qual",
-    )
+c1, c2 = st.columns([1, 1])
+scan_type_opts = ["B-scan", "C-scan", "OCTA", "other"]
+scan_type = c1.selectbox(
+    "Scan", scan_type_opts,
+    index=scan_type_opts.index(saved.get("scan_type", "B-scan"))
+    if saved.get("scan_type") in scan_type_opts else 0,
+    key=f"{K}st",
+)
+scan_loc_opts = ["macula", "optic disc", "periphery", "other"]
+scan_loc = c2.selectbox(
+    "Location", scan_loc_opts,
+    index=scan_loc_opts.index(saved.get("scan_loc", "macula"))
+    if saved.get("scan_loc") in scan_loc_opts else 0,
+    key=f"{K}sl",
+)
+saved_quality = saved.get("quality", "good")
+quality_opts = ["good", "fair", "poor"]
+quality = st.radio(
+    "**Quality**", quality_opts,
+    index=quality_opts.index(saved_quality) if saved_quality in quality_opts else 0,
+    horizontal=True, key=f"{K}qual",
+)
 
-    st.markdown("---")
+st.markdown("---")
 
-    # ── L1: Findings ──
+# ── L1: Findings ──
 
-    saved_loc_findings = saved.get("L1_loc_findings", saved.get("L2_loc_findings", {}))
-    loc_findings = {}
+saved_loc_findings = saved.get("L1_loc_findings", saved.get("L2_loc_findings", {}))
+loc_findings = {}
 
-    def render_category(label, categories, prefix, saved_data):
-        st.markdown(f"### {label}")
-        data = {}
-        for cat_name, cat_findings in categories.items():
-            if cat_name == "Intraretinal-1":
-                display = "**Intraretinal**"
-            elif cat_name == "Intraretinal-2":
-                display = ""
-            elif cat_name == "Outer retina-1":
-                display = "**Outer retina**"
-            elif cat_name == "Outer retina-2":
-                display = ""
-            else:
-                display = f"**{cat_name}**"
-
-            if cat_name not in ("Intraretinal-2", "Outer retina-2"):
-                st.markdown(
-                    "<hr style='margin:0.1rem 0; border:none; border-top:1px solid #ddd;'>",
-                    unsafe_allow_html=True,
-                )
-            cols = st.columns([1.2] + [1] * len(cat_findings))
-            cols[0].markdown(display)
-            saved_cat = saved_data.get(cat_name, [])
-            checked = []
-            for fi, f in enumerate(cat_findings):
-                if cols[fi + 1].checkbox(f, value=(f in saved_cat), key=f"{K}{prefix}_{cat_name}_{fi}"):
-                    checked.append(f)
-            data[cat_name] = checked
-        return data
-
-    fovea_label = "Fovea (<500um)"
-    saved_fovea = saved_loc_findings.get(fovea_label, {})
-    st.markdown('<div class="fovea-block">', unsafe_allow_html=True)
-    loc_findings[fovea_label] = render_category(fovea_label, FOVEA_CATEGORIES, "fov", saved_fovea)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    extra_label = "Extrafovea (>500um)"
-    saved_extra = saved_loc_findings.get(extra_label, {})
-    st.markdown('<div class="extrafovea-block">', unsafe_allow_html=True)
-    loc_findings[extra_label] = render_category(extra_label, EXTRAFOVEA_CATEGORIES, "ext", saved_extra)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Recalculate positives from actual rendered checkboxes (for has_findings & save)
-    all_positive = set()
-    for loc_data in loc_findings.values():
-        if isinstance(loc_data, dict):
-            for cat_findings_list in loc_data.values():
-                all_positive.update(cat_findings_list)
-
-    # Update forced_off based on current render
-    forced_off_negatives = set()
-    for pos_finding, neg_finding in POS_TO_NEG.items():
-        if pos_finding in all_positive:
-            forced_off_negatives.add(neg_finding)
-
-    has_findings = any(
-        f for loc_data in loc_findings.values() if isinstance(loc_data, dict)
-        for f in loc_data.values() if f
-    )
-
-    st.markdown("---")
-
-    # Negative findings (1 row)
-    neg_cols = st.columns([1.2] + [1] * len(NEG_FINDINGS))
-    neg_cols[0].markdown("**Negative**")
-    saved_neg = saved.get("L1_neg", saved.get("L2_neg", NEG_FINDINGS))
-    neg_checked = []
-    for i, n in enumerate(NEG_FINDINGS):
-        neg_key = f"{K}neg_{i}"
-        if n in forced_off_negatives:
-            neg_cols[i + 1].checkbox(f"~~{n}~~", value=False, disabled=True, key=f"{K}neg_disabled_{i}")
+def render_category(label, categories, prefix, saved_data):
+    st.markdown(f"### {label}")
+    data = {}
+    for cat_name, cat_findings in categories.items():
+        if cat_name == "Intraretinal-1":
+            display = "**Intraretinal**"
+        elif cat_name == "Intraretinal-2":
+            display = ""
+        elif cat_name == "Outer retina-1":
+            display = "**Outer retina**"
+        elif cat_name == "Outer retina-2":
+            display = ""
         else:
-            if neg_cols[i + 1].checkbox(n, value=(n in saved_neg), key=neg_key):
-                neg_checked.append(n)
+            display = f"**{cat_name}**"
 
-    st.markdown("---")
+        if cat_name not in ("Intraretinal-2", "Outer retina-2"):
+            st.markdown(
+                "<hr style='margin:0.1rem 0; border:none; border-top:1px solid #ddd;'>",
+                unsafe_allow_html=True,
+            )
+        cols = st.columns([1.2] + [1] * len(cat_findings))
+        cols[0].markdown(display)
+        saved_cat = saved_data.get(cat_name, [])
+        checked = []
+        for fi, f in enumerate(cat_findings):
+            if cols[fi + 1].checkbox(f, value=(f in saved_cat), key=f"{K}{prefix}_{cat_name}_{fi}"):
+                checked.append(f)
+        data[cat_name] = checked
+    return data
 
-    st.markdown("**L2. Abnormality**")
-    l2_opts = ["abnormal", "normal", "uncertain"]
-    l2_key = f"{K}l2"
-    # Auto-switch L2 based on findings
-    if has_findings and st.session_state.get(l2_key) == "normal":
-        st.session_state[l2_key] = "abnormal"
-    elif not has_findings and st.session_state.get(l2_key) == "abnormal":
-        st.session_state[l2_key] = "normal"
-    l2_saved = saved.get("L2", saved.get("L1"))
-    if l2_saved and l2_saved in l2_opts:
-        l2_default = l2_saved
-    elif has_findings:
-        l2_default = "abnormal"
+fovea_label = "Fovea (<500um)"
+saved_fovea = saved_loc_findings.get(fovea_label, {})
+st.markdown('<div class="fovea-block">', unsafe_allow_html=True)
+loc_findings[fovea_label] = render_category(fovea_label, FOVEA_CATEGORIES, "fov", saved_fovea)
+st.markdown('</div>', unsafe_allow_html=True)
+
+extra_label = "Extrafovea (>500um)"
+saved_extra = saved_loc_findings.get(extra_label, {})
+st.markdown('<div class="extrafovea-block">', unsafe_allow_html=True)
+loc_findings[extra_label] = render_category(extra_label, EXTRAFOVEA_CATEGORIES, "ext", saved_extra)
+st.markdown('</div>', unsafe_allow_html=True)
+
+# Recalculate positives from actual rendered checkboxes (for has_findings & save)
+all_positive = set()
+for loc_data in loc_findings.values():
+    if isinstance(loc_data, dict):
+        for cat_findings in loc_data.values():
+            all_positive.update(cat_findings)
+
+# Update forced_off based on current render
+forced_off_negatives = set()
+for pos_finding, neg_finding in POS_TO_NEG.items():
+    if pos_finding in all_positive:
+        forced_off_negatives.add(neg_finding)
+
+has_findings = any(
+    f for loc_data in loc_findings.values() if isinstance(loc_data, dict)
+    for f in loc_data.values() if f
+)
+
+st.markdown("---")
+
+# Negative findings (1 row)
+neg_cols = st.columns([1.2] + [1] * len(NEG_FINDINGS))
+neg_cols[0].markdown("**Negative**")
+saved_neg = saved.get("L1_neg", saved.get("L2_neg", NEG_FINDINGS))
+neg_checked = []
+for i, n in enumerate(NEG_FINDINGS):
+    neg_key = f"{K}neg_{i}"
+    if n in forced_off_negatives:
+        neg_cols[i + 1].checkbox(f"~~{n}~~", value=False, disabled=True, key=f"{K}neg_disabled_{i}")
     else:
-        l2_default = "normal"
-    l2 = st.radio("l2", l2_opts, index=l2_opts.index(l2_default), horizontal=True, key=l2_key, label_visibility="collapsed")
+        if neg_cols[i + 1].checkbox(n, value=(n in saved_neg), key=neg_key):
+            neg_checked.append(n)
 
-    st.markdown("**L3. Management**")
-    mgmt_opts = ["no abnormality", "observation", "further exam", "treatment"]
-    mgmt_key = f"{K}mgmt"
-    # Auto-switch L3 based on findings
-    if has_findings and st.session_state.get(mgmt_key) == "no abnormality":
-        st.session_state[mgmt_key] = "observation"
-    elif not has_findings and st.session_state.get(mgmt_key) in ("observation", "further exam", "treatment"):
-        st.session_state[mgmt_key] = "no abnormality"
-    saved_mgmt = saved.get("L3_mgmt", saved.get("L4_mgmt", "no abnormality"))
-    mgmt = st.radio(
-        "l3", mgmt_opts,
-        index=mgmt_opts.index(saved_mgmt) if saved_mgmt in mgmt_opts else 0,
-        horizontal=True, key=mgmt_key, label_visibility="collapsed",
-    )
+st.markdown("---")
 
-    st.markdown("---")
+st.markdown("**L2. Abnormality**")
+l2_opts = ["abnormal", "normal", "uncertain"]
+l2_key = f"{K}l2"
+# Auto-switch L2 based on findings
+if has_findings and st.session_state.get(l2_key) == "normal":
+    st.session_state[l2_key] = "abnormal"
+elif not has_findings and st.session_state.get(l2_key) == "abnormal":
+    st.session_state[l2_key] = "normal"
+l2_saved = saved.get("L2", saved.get("L1"))
+if l2_saved and l2_saved in l2_opts:
+    l2_default = l2_saved
+elif has_findings:
+    l2_default = "abnormal"
+else:
+    l2_default = "normal"
+l2 = st.radio("l2", l2_opts, index=l2_opts.index(l2_default), horizontal=True, key=l2_key, label_visibility="collapsed")
 
-    # Auto-generate caption from current form state
-    def _build_preview_data():
-        return {
-            "quality": quality, "L2": l2,
-            "L1_loc_findings": loc_findings,
-            "L1_neg": neg_checked,
-            "L3_mgmt": mgmt,
-        }
+st.markdown("**L3. Management**")
+mgmt_opts = ["no abnormality", "observation", "further exam", "treatment"]
+mgmt_key = f"{K}mgmt"
+# Auto-switch L3 based on findings
+if has_findings and st.session_state.get(mgmt_key) == "no abnormality":
+    st.session_state[mgmt_key] = "observation"
+elif not has_findings and st.session_state.get(mgmt_key) in ("observation", "further exam", "treatment"):
+    st.session_state[mgmt_key] = "no abnormality"
+saved_mgmt = saved.get("L3_mgmt", saved.get("L4_mgmt", "no abnormality"))
+mgmt = st.radio(
+    "l3", mgmt_opts,
+    index=mgmt_opts.index(saved_mgmt) if saved_mgmt in mgmt_opts else 0,
+    horizontal=True, key=mgmt_key, label_visibility="collapsed",
+)
 
-    col_cap_label, col_cap_btn = st.columns([3, 1])
-    col_cap_label.markdown("**Caption**")
-    if col_cap_btn.button("Auto Generate", key=f"{K}auto_cap"):
-        st.session_state[f"{K}cap"] = generate_caption(_build_preview_data())
-        st.rerun()
+st.markdown("---")
 
-    caption = st.text_area("Caption", value=saved.get("caption", ""), height=300, key=f"{K}cap")
+# Auto-generate caption from current form state
+def _build_preview_data():
+    return {
+        "quality": quality, "L2": l2,
+        "L1_loc_findings": loc_findings,
+        "L1_neg": neg_checked,
+        "L3_mgmt": mgmt,
+    }
 
-    # ── Save ──
-    def build_data():
-        return {
-            "scan_type": scan_type, "scan_loc": scan_loc, "quality": quality,
-            "L1_loc_findings": loc_findings,
-            "L2": l2,
-            "L1_neg": neg_checked,
-            "L3_mgmt": mgmt,
-            "caption": caption,
-        }
+col_cap_label, col_cap_btn = st.columns([3, 1])
+col_cap_label.markdown("**Caption**")
+if col_cap_btn.button("Auto Generate", key=f"{K}auto_cap"):
+    st.session_state[f"{K}cap"] = generate_caption(_build_preview_data())
+    st.rerun()
 
-    c_save, c_next = st.columns(2)
-    if c_save.button("Save", type="primary", use_container_width=True):
-        with st.spinner("Saving to Google Sheets..."):
-            save_annotation(build_data(), current, annotator)
-            st.session_state[done_key].add(current)
-        st.success("Saved")
-        st.rerun()
+caption = st.text_area("Caption", value=saved.get("caption", ""), height=300, key=f"{K}cap")
 
-    if c_next.button("Save & Next ▶", use_container_width=True):
-        with st.spinner("Saving to Google Sheets..."):
-            save_annotation(build_data(), current, annotator)
-            st.session_state[done_key].add(current)
-        st.session_state.idx = min(total - 1, idx + 1)
-        st.rerun()
+# ── Save ──
+def build_data():
+    return {
+        "scan_type": scan_type, "scan_loc": scan_loc, "quality": quality,
+        "L1_loc_findings": loc_findings,
+        "L2": l2,
+        "L1_neg": neg_checked,
+        "L3_mgmt": mgmt,
+        "caption": caption,
+    }
+
+c_save, c_next = st.columns(2)
+if c_save.button("Save", type="primary", use_container_width=True):
+    with st.spinner("Saving to Google Sheets..."):
+        save_annotation(build_data(), current, annotator)
+        st.session_state[done_key].add(current)
+    st.success("Saved")
+    st.rerun()
+
+if c_next.button("Save & Next ▶", use_container_width=True):
+    with st.spinner("Saving to Google Sheets..."):
+        save_annotation(build_data(), current, annotator)
+        st.session_state[done_key].add(current)
+    st.session_state.idx = min(total - 1, idx + 1)
+    st.rerun()
 
 # Scroll to top
 st.html("<script>window.parent.document.querySelector('section.main').scrollTo(0,0);</script>")
