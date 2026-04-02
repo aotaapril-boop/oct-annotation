@@ -369,7 +369,7 @@ def generate_caption(data):
         location_text = LOCATION_MAP.get(loc_label, loc_label.replace("_", " "))
         findings_text = _join_english_list(expanded)
         sentences.append(
-            f"{findings_text.capitalize()} {'is' if len(expanded) == 1 else 'are'} "
+            f"{findings_text[0].upper() + findings_text[1:]} {'is' if len(expanded) == 1 else 'are'} "
             f"observed in the {location_text}."
         )
 
