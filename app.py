@@ -20,7 +20,7 @@ st.set_page_config(page_title="OCT Annotation", layout="wide")
 
 st.markdown("""
 <style>
-[data-testid="stSidebar"] { min-width: 500px; max-width: 500px; }
+[data-testid="stSidebar"] { min-width: 300px; max-width: 800px; resize: horizontal; overflow: auto; }
 .block-container { padding-top: 2.5rem; padding-bottom: 0rem; }
 h3 { margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }
 hr { margin-top: 0.2rem; margin-bottom: 0.2rem; }
