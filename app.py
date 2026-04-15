@@ -582,7 +582,11 @@ def render_category(label, categories, prefix, saved_data):
                 "<hr style='margin:0.1rem 0; border:none; border-top:1px solid #ddd;'>",
                 unsafe_allow_html=True,
             )
-        cols = st.columns([1.2] + [1] * len(cat_findings))
+        if cat_name == "Outer retina-1":
+            col_widths = [1.2, 1, 1.6, 1]
+        else:
+            col_widths = [1.2] + [1] * len(cat_findings)
+        cols = st.columns(col_widths)
         cols[0].markdown(display)
         saved_cat = saved_data.get(cat_name, [])
         checked = []
