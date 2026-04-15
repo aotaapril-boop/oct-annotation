@@ -369,8 +369,13 @@ def generate_caption(data):
             merged[loc_label] = []
         merged[loc_label].extend(findings_list)
 
-    # Build location + findings sentences
-    for loc_label in sorted(merged.keys()):
+    # Build location + findings sentences (fovea before extrafovea)
+    LOC_ORDER = [
+        "fovea_VRI", "fovea_intraretinal", "fovea_outer_retina",
+        "extrafovea_VRI", "extrafovea_intraretinal", "extrafovea_outer_retina", "extrafovea_choroid",
+    ]
+    ordered_keys = [k for k in LOC_ORDER if k in merged] + [k for k in merged if k not in LOC_ORDER]
+    for loc_label in ordered_keys:
         findings_list = merged[loc_label]
         expanded = [_expand_finding(f) for f in findings_list if f and f != "other"]
         if not expanded:
@@ -407,7 +412,7 @@ FOVEA_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
     "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
-    "Outer retina-1":   ["SRF", "serous PED", "SHRM", "EZ disruption"],
+    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED", "SHRM", "EZ disruption"],
     "Outer retina-2":   ["outer atrophy", "drusen"],
 }
 
@@ -415,7 +420,7 @@ EXTRAFOVEA_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
     "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
-    "Outer retina-1":   ["SRF", "serous PED", "SHRM", "EZ disruption"],
+    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED", "SHRM", "EZ disruption"],
     "Outer retina-2":   ["outer atrophy", "drusen"],
     "Choroid":          ["choroidal thickening", "choroidal thinning"],
 }
