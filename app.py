@@ -412,16 +412,16 @@ FOVEA_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
     "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
-    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED", "SHRM", "EZ disruption"],
-    "Outer retina-2":   ["outer atrophy", "drusen"],
+    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED", "SHRM"],
+    "Outer retina-2":   ["EZ disruption", "outer atrophy", "drusen"],
 }
 
 EXTRAFOVEA_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
     "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
-    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED", "SHRM", "EZ disruption"],
-    "Outer retina-2":   ["outer atrophy", "drusen"],
+    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED", "SHRM"],
+    "Outer retina-2":   ["EZ disruption", "outer atrophy", "drusen"],
     "Choroid":          ["choroidal thickening", "choroidal thinning"],
 }
 
