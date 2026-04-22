@@ -113,13 +113,13 @@ HEADER_ROW = [
 ]
 
 def _api_call_with_retry(func, retries=3):
-    """Retry API calls on transient SSL/connection errors."""
+    """Retry API calls on transient errors."""
     for attempt in range(retries):
         try:
             return func()
         except Exception as e:
-            if attempt < retries - 1 and ("SSL" in str(e) or "Connection" in str(e)):
-                time.sleep(1)
+            if attempt < retries - 1:
+                time.sleep(2 ** attempt)
                 continue
             raise
 
@@ -179,7 +179,10 @@ def _load_all_annotations(annotator):
     cache_key = f"_ann_cache_{annotator}"
     if cache_key not in st.session_state:
         ws = _get_or_create_sheet(annotator)
-        records = _api_call_with_retry(lambda: ws.get_all_records())
+        try:
+            records = _api_call_with_retry(lambda: ws.get_all_records())
+        except Exception:
+            records = []
         ann_dict = {}
         for rec in records:
             img = rec.get("image", "")
