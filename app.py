@@ -5,7 +5,6 @@ Annotations: per-annotator Google Sheets (auto-created in same Drive folder)
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 import json
 import io
 import base64
@@ -535,65 +534,61 @@ except Exception as e:
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Mobile: sticky image via HTML component (hidden on desktop) ───
+# ─── Mobile: fixed image overlay (injected into parent DOM via st.html) ───
 img_b64 = base64.b64encode(img_bytes).decode()
-mobile_html = f"""
+st.html(f"""
 <style>
-    @media (min-width: 768px) {{
-        #mobile-sticky {{ display: none !important; }}
+    #oct-mobile-img {{
+        display: none;
     }}
     @media (max-width: 767px) {{
-        #mobile-sticky {{
+        #oct-mobile-img {{
+            display: block;
             position: fixed;
             top: 0;
             left: 0;
             width: 100vw;
             z-index: 99999;
             background: #0e1117;
-            padding: 4px 4px 2px 4px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            padding: 2px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.6);
         }}
-        #mobile-sticky img {{
+        #oct-mobile-img img {{
             width: 100%;
-            max-height: 35vh;
+            max-height: 33vh;
             object-fit: contain;
+            display: block;
         }}
-        #mobile-nav {{
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 2px 4px;
-            font-size: 14px;
+        #oct-mobile-info {{
             color: #fafafa;
-        }}
-        #mobile-nav button {{
-            background: #262730;
-            border: 1px solid #555;
-            color: #fafafa;
-            padding: 6px 16px;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-        }}
-        #mobile-nav button:active {{
-            background: #444;
+            font-size: 13px;
+            padding: 2px 6px;
+            text-align: center;
         }}
     }}
 </style>
-<div id="mobile-sticky">
+<div id="oct-mobile-img">
     <img src="data:image/jpeg;base64,{img_b64}" />
-    <div id="mobile-nav">
-        <span><b>{status} {idx+1}/{total}</b> (done: {done_count})</span>
+    <div id="oct-mobile-info">
+        <b>{status} {idx+1}/{total}</b> &nbsp; {current} &nbsp; (done: {done_count})
     </div>
 </div>
-"""
-components.html(mobile_html, height=0)
+<script>
+    // Move the element out of its Streamlit container to the top of the body
+    (function() {{
+        var el = document.getElementById('oct-mobile-img');
+        if (el && el.parentElement !== document.body) {{
+            document.body.appendChild(el);
+        }}
+    }})();
+</script>
+""")
 
-# Add top padding on mobile so form doesn't hide behind sticky image
+# Add top padding on mobile so form content isn't hidden behind fixed image
 st.markdown("""
 <style>
 @media (max-width: 767px) {
-    .block-container { padding-top: 40vh !important; }
+    .block-container { padding-top: 38vh !important; }
 }
 </style>
 """, unsafe_allow_html=True)
