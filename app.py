@@ -489,11 +489,23 @@ if not annotator or annotator.strip() == "":
 # ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
 
 st.sidebar.slider("Image panel width", min_value=300, max_value=800, value=500, step=50, key="sidebar_w")
+st.sidebar.text_input("Annotator name (sidebar)", value=annotator, key="annotator_sidebar", disabled=True)
 
 annotator = annotator.strip()
 
 if "idx" not in st.session_state:
     st.session_state.idx = 0
+
+# Handle mobile navigation via URL query parameter
+query_params = st.query_params
+if "oct_jump" in query_params:
+    try:
+        jump_idx = int(query_params["oct_jump"])
+        if 0 <= jump_idx < total:
+            st.session_state.idx = jump_idx
+        st.query_params.clear()
+    except (ValueError, TypeError):
+        st.query_params.clear()
 
 col_p, col_n, col_jump = st.sidebar.columns([1, 1, 2])
 if col_p.button("◀ Prev"):
@@ -552,20 +564,54 @@ st.html(f"""
             width: 100vw;
             z-index: 99999;
             background: #0e1117;
-            padding: 2px;
+            padding: 0;
             box-shadow: 0 2px 8px rgba(0,0,0,0.6);
         }}
         #oct-mobile-img img {{
             width: 100%;
-            max-height: 33vh;
+            max-height: 30vh;
             object-fit: contain;
             display: block;
+            margin: 0;
         }}
         #oct-mobile-info {{
             color: #fafafa;
             font-size: 13px;
             padding: 2px 6px;
             text-align: center;
+        }}
+        #oct-mobile-nav {{
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 6px;
+        }}
+        #oct-mobile-nav button {{
+            background: #333;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 4px 12px;
+            font-size: 13px;
+            cursor: pointer;
+        }}
+        #oct-mobile-nav button:active {{
+            background: #555;
+        }}
+        #oct-mobile-nav input {{
+            width: 50px;
+            text-align: center;
+            background: #222;
+            color: #fff;
+            border: 1px solid #555;
+            border-radius: 4px;
+            padding: 4px;
+            font-size: 13px;
+        }}
+        #oct-mobile-nav span {{
+            color: #aaa;
+            font-size: 13px;
         }}
     }}
 </style>
@@ -574,15 +620,52 @@ st.html(f"""
     <div id="oct-mobile-info">
         <b>{status} {idx+1}/{total}</b> &nbsp; {current} &nbsp; (done: {done_count})
     </div>
+    <div id="oct-mobile-nav">
+        <button onclick="octNav('prev')">◀</button>
+        <input type="number" id="oct-jump-input" value="{idx+1}" min="1" max="{total}" />
+        <span>/ {total}</span>
+        <button onclick="octNav('go')">Go</button>
+        <button onclick="octNav('next')">▶</button>
+    </div>
 </div>
 <script>
-    // Move the element out of its Streamlit container to the top of the body
     (function() {{
+        // Move to body for fixed positioning
         var el = document.getElementById('oct-mobile-img');
         if (el && el.parentElement !== document.body) {{
             document.body.appendChild(el);
         }}
+        // Hide Streamlit header on mobile for more space
+        var header = window.parent.document.querySelector('header[data-testid="stHeader"]');
+        if (header && window.innerWidth < 768) {{
+            header.style.display = 'none';
+        }}
     }})();
+
+    function octNav(action) {{
+        var current = {idx};
+        var total = {total};
+        var target = current;
+        if (action === 'prev') {{
+            target = Math.max(0, current - 1);
+        }} else if (action === 'next') {{
+            target = Math.min(total - 1, current + 1);
+        }} else if (action === 'go') {{
+            var inp = document.getElementById('oct-jump-input');
+            var val = parseInt(inp.value);
+            if (!isNaN(val) && val >= 1 && val <= total) {{
+                target = val - 1;
+            }} else {{
+                return;
+            }}
+        }}
+        if (target !== current) {{
+            // Use Streamlit's setComponentValue via URL params
+            var url = new URL(window.parent.location);
+            url.searchParams.set('oct_jump', target);
+            window.parent.location.href = url.toString();
+        }}
+    }}
 </script>
 """)
 
@@ -590,7 +673,7 @@ st.html(f"""
 st.markdown("""
 <style>
 @media (max-width: 767px) {
-    .block-container { padding-top: 38vh !important; }
+    .block-container { padding-top: 40vh !important; }
 }
 </style>
 """, unsafe_allow_html=True)
