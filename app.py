@@ -5,8 +5,10 @@ Annotations: per-annotator Google Sheets (auto-created in same Drive folder)
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import json
 import io
+import base64
 import time
 from datetime import datetime
 from google.oauth2.service_account import Credentials
@@ -533,32 +535,68 @@ except Exception as e:
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Mobile: sticky image + compact nav (hidden on desktop) ───
-st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
-st.markdown('<div class="sticky-image">', unsafe_allow_html=True)
+# ─── Mobile: sticky image via HTML component (hidden on desktop) ───
+img_b64 = base64.b64encode(img_bytes).decode()
+mobile_html = f"""
+<style>
+    @media (min-width: 768px) {{
+        #mobile-sticky {{ display: none !important; }}
+    }}
+    @media (max-width: 767px) {{
+        #mobile-sticky {{
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            z-index: 99999;
+            background: #0e1117;
+            padding: 4px 4px 2px 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }}
+        #mobile-sticky img {{
+            width: 100%;
+            max-height: 35vh;
+            object-fit: contain;
+        }}
+        #mobile-nav {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 2px 4px;
+            font-size: 14px;
+            color: #fafafa;
+        }}
+        #mobile-nav button {{
+            background: #262730;
+            border: 1px solid #555;
+            color: #fafafa;
+            padding: 6px 16px;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+        }}
+        #mobile-nav button:active {{
+            background: #444;
+        }}
+    }}
+</style>
+<div id="mobile-sticky">
+    <img src="data:image/jpeg;base64,{img_b64}" />
+    <div id="mobile-nav">
+        <span><b>{status} {idx+1}/{total}</b> (done: {done_count})</span>
+    </div>
+</div>
+"""
+components.html(mobile_html, height=0)
 
-try:
-    st.image(img_bytes, use_container_width=True)
-except Exception:
-    pass
-
-mc1, mc2, mc3, mc4 = st.columns([1, 1, 1.2, 1.2])
-if mc1.button("◀", key="m_prev", use_container_width=True):
-    st.session_state.idx = max(0, st.session_state.idx - 1)
-    st.rerun()
-if mc2.button("▶", key="m_next", use_container_width=True):
-    st.session_state.idx = min(total - 1, st.session_state.idx + 1)
-    st.rerun()
-if mc3.button("⏭", key="m_skip", use_container_width=True):
-    for i in range(total):
-        if images[i] not in st.session_state[done_key]:
-            st.session_state.idx = i
-            break
-    st.rerun()
-mc4.markdown(f"**{status} {idx+1}/{total}**")
-
-st.markdown('</div>', unsafe_allow_html=True)
-st.markdown('</div>', unsafe_allow_html=True)
+# Add top padding on mobile so form doesn't hide behind sticky image
+st.markdown("""
+<style>
+@media (max-width: 767px) {
+    .block-container { padding-top: 40vh !important; }
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ─── Main area: annotation form (scrolls independently) ─────
 
