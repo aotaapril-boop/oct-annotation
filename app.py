@@ -479,14 +479,16 @@ images = [name for name, _ in images_info]
 image_ids = {name: fid for name, fid in images_info}
 total = len(images)
 
+# ─── Annotator name (main area, visible on both mobile & desktop) ───
+annotator = st.text_input("Annotator name", value="default", key="annotator_main")
+
+if not annotator or annotator.strip() == "":
+    st.warning("Please enter your annotator name.")
+    st.stop()
+
 # ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
 
 st.sidebar.slider("Image panel width", min_value=300, max_value=800, value=500, step=50, key="sidebar_w")
-annotator = st.sidebar.text_input("Annotator name", value="default")
-
-if not annotator or annotator.strip() == "":
-    st.warning("Please enter your annotator name in the sidebar.")
-    st.stop()
 
 annotator = annotator.strip()
 
