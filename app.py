@@ -22,14 +22,42 @@ sidebar_width = st.session_state.get("sidebar_w", 500)
 
 st.markdown(f"""
 <style>
-/* Sidebar: fixed width controlled by slider */
-[data-testid="stSidebar"] {{
-    min-width: {sidebar_width}px !important;
-    max-width: {sidebar_width}px !important;
-    width: {sidebar_width}px !important;
+/* === Desktop: sidebar layout unchanged === */
+@media (min-width: 768px) {{
+    [data-testid="stSidebar"] {{
+        min-width: {sidebar_width}px !important;
+        max-width: {sidebar_width}px !important;
+        width: {sidebar_width}px !important;
+    }}
+    [data-testid="stSidebar"] > div:first-child {{
+        width: {sidebar_width}px !important;
+    }}
+    .mobile-only {{ display: none !important; }}
 }}
-[data-testid="stSidebar"] > div:first-child {{
-    width: {sidebar_width}px !important;
+/* === Mobile: hide sidebar, show inline image === */
+@media (max-width: 767px) {{
+    [data-testid="stSidebar"],
+    [data-testid="collapsedControl"],
+    button[kind="header"] {{
+        display: none !important;
+    }}
+    .block-container {{
+        padding-left: 0.4rem !important;
+        padding-right: 0.4rem !important;
+        padding-top: 0.3rem !important;
+    }}
+    .sticky-image {{
+        position: sticky;
+        top: 0;
+        z-index: 999;
+        background: var(--background-color, #0e1117);
+        padding: 0.2rem 0;
+        border-bottom: 1px solid #333;
+    }}
+    [data-testid="stCheckbox"] label p {{ font-size: 0.8rem; }}
+    [data-testid="stRadio"] label p {{ font-size: 0.82rem; }}
+    button {{ min-height: 2.4rem !important; }}
+    h3 {{ font-size: 0.9rem !important; }}
 }}
 .block-container {{ padding-top: 1rem; padding-bottom: 0rem; }}
 h3 {{ margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }}
@@ -504,6 +532,33 @@ except Exception as e:
 
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
+
+# ─── Mobile: sticky image + compact nav (hidden on desktop) ───
+st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
+st.markdown('<div class="sticky-image">', unsafe_allow_html=True)
+
+try:
+    st.image(img_bytes, use_container_width=True)
+except Exception:
+    pass
+
+mc1, mc2, mc3, mc4 = st.columns([1, 1, 1.2, 1.2])
+if mc1.button("◀", key="m_prev", use_container_width=True):
+    st.session_state.idx = max(0, st.session_state.idx - 1)
+    st.rerun()
+if mc2.button("▶", key="m_next", use_container_width=True):
+    st.session_state.idx = min(total - 1, st.session_state.idx + 1)
+    st.rerun()
+if mc3.button("⏭", key="m_skip", use_container_width=True):
+    for i in range(total):
+        if images[i] not in st.session_state[done_key]:
+            st.session_state.idx = i
+            break
+    st.rerun()
+mc4.markdown(f"**{status} {idx+1}/{total}**")
+
+st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── Main area: annotation form (scrolls independently) ─────
 
