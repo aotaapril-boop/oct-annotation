@@ -22,28 +22,14 @@ sidebar_width = st.session_state.get("sidebar_w", 500)
 
 st.markdown(f"""
 <style>
-/* === Desktop === */
-@media (min-width: 768px) {{
-    [data-testid="stSidebar"] {{
-        min-width: {sidebar_width}px !important;
-        max-width: {sidebar_width}px !important;
-        width: {sidebar_width}px !important;
-    }}
-    [data-testid="stSidebar"] > div:first-child {{
-        width: {sidebar_width}px !important;
-    }}
-    /* Hide mobile-only elements on desktop */
-    .mobile-only {{ display: none !important; }}
+/* Sidebar: fixed width controlled by slider */
+[data-testid="stSidebar"] {{
+    min-width: {sidebar_width}px !important;
+    max-width: {sidebar_width}px !important;
+    width: {sidebar_width}px !important;
 }}
-/* === Mobile === */
-@media (max-width: 767px) {{
-    .block-container {{ padding-left: 0.5rem !important; padding-right: 0.5rem !important; }}
-    [data-testid="stCheckbox"] label p {{ font-size: 0.82rem; }}
-    [data-testid="stRadio"] label p {{ font-size: 0.85rem; }}
-    button {{ min-height: 2.5rem !important; }}
-    h3 {{ font-size: 0.95rem !important; }}
-    /* Hide desktop-only elements on mobile */
-    .desktop-only {{ display: none !important; }}
+[data-testid="stSidebar"] > div:first-child {{
+    width: {sidebar_width}px !important;
 }}
 .block-container {{ padding-top: 1rem; padding-bottom: 0rem; }}
 h3 {{ margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }}
@@ -518,42 +504,6 @@ except Exception as e:
 
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
-
-# ─── Mobile: inline navigation + image (hidden on desktop via CSS) ─────
-st.markdown('<div class="mobile-only">', unsafe_allow_html=True)
-
-annotator_mobile = st.text_input("Annotator", value=annotator, key="mob_ann", disabled=True)
-
-mob_p, mob_n, mob_skip, mob_jump = st.columns([1, 1, 1.5, 1.5])
-if mob_p.button("◀", key="mob_prev", use_container_width=True):
-    st.session_state.idx = max(0, st.session_state.idx - 1)
-    st.rerun()
-if mob_n.button("▶", key="mob_next", use_container_width=True):
-    st.session_state.idx = min(total - 1, st.session_state.idx + 1)
-    st.rerun()
-if mob_skip.button("⏭ Skip", key="mob_skip", use_container_width=True):
-    for i in range(total):
-        if images[i] not in st.session_state[done_key]:
-            st.session_state.idx = i
-            break
-    st.rerun()
-mob_jump_val = mob_jump.number_input(
-    "No.", min_value=1, max_value=total,
-    value=st.session_state.idx + 1, label_visibility="collapsed", key="mob_jump",
-)
-if mob_jump_val - 1 != st.session_state.idx:
-    st.session_state.idx = mob_jump_val - 1
-    st.rerun()
-
-st.markdown(f"{status} **{idx+1}/{total}** `{current}` (done: {done_count})")
-
-with st.expander("🖼 Image", expanded=True):
-    try:
-        st.image(img_bytes, use_container_width=True)
-    except Exception as e:
-        st.error(f"Failed to load image: {e}")
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── Main area: annotation form (scrolls independently) ─────
 
