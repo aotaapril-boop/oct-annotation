@@ -34,26 +34,20 @@ st.markdown(f"""
         width: {sidebar_width}px !important;
     }}
     .mobile-only {{ display: none !important; }}
+    .mobile-image-block {{ display: none !important; }}
 }}
 /* === Mobile: hide sidebar, show inline image === */
 @media (max-width: 767px) {{
     [data-testid="stSidebar"],
     [data-testid="collapsedControl"],
-    button[kind="header"] {{
+    button[kind="header"],
+    header[data-testid="stHeader"] {{
         display: none !important;
     }}
     .block-container {{
         padding-left: 0.4rem !important;
         padding-right: 0.4rem !important;
         padding-top: 0.3rem !important;
-    }}
-    .sticky-image {{
-        position: sticky;
-        top: 0;
-        z-index: 999;
-        background: var(--background-color, #0e1117);
-        padding: 0.2rem 0;
-        border-bottom: 1px solid #333;
     }}
     [data-testid="stCheckbox"] label p {{ font-size: 0.8rem; }}
     [data-testid="stRadio"] label p {{ font-size: 0.82rem; }}
@@ -496,17 +490,6 @@ annotator = annotator.strip()
 if "idx" not in st.session_state:
     st.session_state.idx = 0
 
-# Handle mobile navigation via URL query parameter
-query_params = st.query_params
-if "oct_jump" in query_params:
-    try:
-        jump_idx = int(query_params["oct_jump"])
-        if 0 <= jump_idx < total:
-            st.session_state.idx = jump_idx
-        st.query_params.clear()
-    except (ValueError, TypeError):
-        st.query_params.clear()
-
 col_p, col_n, col_jump = st.sidebar.columns([1, 1, 2])
 if col_p.button("◀ Prev"):
     st.session_state.idx = max(0, st.session_state.idx - 1)
@@ -548,135 +531,32 @@ except Exception as e:
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Mobile: fixed image overlay (injected into parent DOM via st.html) ───
+# ─── Mobile: inline image + nav (st.markdown, not iframe) ───
 img_b64 = base64.b64encode(img_bytes).decode()
-st.html(f"""
-<style>
-    #oct-mobile-img {{
-        display: none;
-    }}
-    @media (max-width: 767px) {{
-        #oct-mobile-img {{
-            display: block;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            z-index: 99999;
-            background: #0e1117;
-            padding: 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.6);
-        }}
-        #oct-mobile-img img {{
-            width: 100%;
-            max-height: 30vh;
-            object-fit: contain;
-            display: block;
-            margin: 0;
-        }}
-        #oct-mobile-info {{
-            color: #fafafa;
-            font-size: 13px;
-            padding: 2px 6px;
-            text-align: center;
-        }}
-        #oct-mobile-nav {{
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 6px;
-            padding: 3px 6px;
-        }}
-        #oct-mobile-nav button {{
-            background: #333;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
-            padding: 4px 12px;
-            font-size: 13px;
-            cursor: pointer;
-        }}
-        #oct-mobile-nav button:active {{
-            background: #555;
-        }}
-        #oct-mobile-nav input {{
-            width: 50px;
-            text-align: center;
-            background: #222;
-            color: #fff;
-            border: 1px solid #555;
-            border-radius: 4px;
-            padding: 4px;
-            font-size: 13px;
-        }}
-        #oct-mobile-nav span {{
-            color: #aaa;
-            font-size: 13px;
-        }}
-    }}
-</style>
-<div id="oct-mobile-img">
-    <img src="data:image/jpeg;base64,{img_b64}" />
-    <div id="oct-mobile-info">
+st.markdown(f"""
+<div class="mobile-image-block">
+    <img src="data:image/jpeg;base64,{img_b64}" style="width:100%; max-height:35vh; object-fit:contain; display:block;" />
+    <div style="color:#fafafa; font-size:13px; text-align:center; padding:2px 6px;">
         <b>{status} {idx+1}/{total}</b> &nbsp; {current} &nbsp; (done: {done_count})
     </div>
-    <div id="oct-mobile-nav">
-        <button onclick="octNav('prev')">◀</button>
-        <input type="number" id="oct-jump-input" value="{idx+1}" min="1" max="{total}" />
-        <span>/ {total}</span>
-        <button onclick="octNav('go')">Go</button>
-        <button onclick="octNav('next')">▶</button>
-    </div>
 </div>
-<script>
-    (function() {{
-        // Move to body for fixed positioning
-        var el = document.getElementById('oct-mobile-img');
-        if (el && el.parentElement !== document.body) {{
-            document.body.appendChild(el);
-        }}
-        // Hide Streamlit header on mobile for more space
-        var header = window.parent.document.querySelector('header[data-testid="stHeader"]');
-        if (header && window.innerWidth < 768) {{
-            header.style.display = 'none';
-        }}
-    }})();
-
-    function octNav(action) {{
-        var current = {idx};
-        var total = {total};
-        var target = current;
-        if (action === 'prev') {{
-            target = Math.max(0, current - 1);
-        }} else if (action === 'next') {{
-            target = Math.min(total - 1, current + 1);
-        }} else if (action === 'go') {{
-            var inp = document.getElementById('oct-jump-input');
-            var val = parseInt(inp.value);
-            if (!isNaN(val) && val >= 1 && val <= total) {{
-                target = val - 1;
-            }} else {{
-                return;
-            }}
-        }}
-        if (target !== current) {{
-            // Use Streamlit's setComponentValue via URL params
-            var url = new URL(window.parent.location);
-            url.searchParams.set('oct_jump', target);
-            window.parent.location.href = url.toString();
-        }}
-    }}
-</script>
-""")
-
-# Add top padding on mobile so form content isn't hidden behind fixed image
-st.markdown("""
-<style>
-@media (max-width: 767px) {
-    .block-container { padding-top: 40vh !important; }
-}
-</style>
 """, unsafe_allow_html=True)
+
+# Mobile navigation (Streamlit widgets — work without JS)
+mob_prev, mob_jump, mob_next = st.columns([1, 2, 1])
+if mob_prev.button("◀ Prev", key="mob_prev"):
+    st.session_state.idx = max(0, st.session_state.idx - 1)
+    st.rerun()
+mob_jump_val = mob_jump.number_input(
+    "Jump to", min_value=1, max_value=total,
+    value=st.session_state.idx + 1, key="mob_jump", label_visibility="collapsed",
+)
+if mob_jump_val - 1 != st.session_state.idx:
+    st.session_state.idx = mob_jump_val - 1
+    st.rerun()
+if mob_next.button("Next ▶", key="mob_next"):
+    st.session_state.idx = min(total - 1, st.session_state.idx + 1)
+    st.rerun()
 
 # ─── Main area: annotation form (scrolls independently) ─────
 
