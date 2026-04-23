@@ -18,26 +18,30 @@ import gspread
 
 st.set_page_config(page_title="OCT Annotation", layout="wide")
 
-sidebar_width = st.session_state.get("sidebar_w", 500)
-
-st.markdown(f"""
+st.markdown("""
 <style>
-/* Sidebar: fixed width controlled by slider */
-[data-testid="stSidebar"] {{
-    min-width: {sidebar_width}px !important;
-    max-width: {sidebar_width}px !important;
-    width: {sidebar_width}px !important;
-}}
-[data-testid="stSidebar"] > div:first-child {{
-    width: {sidebar_width}px !important;
-}}
-.block-container {{ padding-top: 1rem; padding-bottom: 0rem; }}
-h3 {{ margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }}
-hr {{ margin-top: 0.2rem; margin-bottom: 0.2rem; }}
-[data-testid="stCheckbox"] {{ margin-bottom: -0.8rem; }}
-[data-testid="stRadio"] > div {{ margin-top: -0.5rem; }}
-.fovea-block {{ background-color: #f0f4ff; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }}
-.extrafovea-block {{ background-color: #fff8f0; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }}
+/* Hide sidebar completely — all UI is in main area */
+[data-testid="stSidebar"] { display: none !important; }
+[data-testid="collapsedControl"] { display: none !important; }
+.block-container { padding-top: 0.5rem; padding-bottom: 0rem; max-width: 100% !important; }
+/* Desktop */
+@media (min-width: 768px) {
+    .block-container { padding-left: 2rem !important; padding-right: 2rem !important; }
+}
+/* Mobile */
+@media (max-width: 767px) {
+    .block-container { padding-left: 0.3rem !important; padding-right: 0.3rem !important; }
+    [data-testid="stCheckbox"] label p { font-size: 0.82rem; }
+    [data-testid="stRadio"] label p { font-size: 0.85rem; }
+    button { min-height: 2.5rem !important; font-size: 0.9rem !important; }
+    h3 { font-size: 0.95rem !important; }
+}
+h3 { margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }
+hr { margin-top: 0.2rem; margin-bottom: 0.2rem; }
+[data-testid="stCheckbox"] { margin-bottom: -0.8rem; }
+[data-testid="stRadio"] > div { margin-top: -0.5rem; }
+.fovea-block { background-color: #f0f4ff; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }
+.extrafovea-block { background-color: #fff8f0; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -450,13 +454,12 @@ images = [name for name, _ in images_info]
 image_ids = {name: fid for name, fid in images_info}
 total = len(images)
 
-# ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
+# ─── Navigation & image (all in main area) ────────────────────
 
-st.sidebar.slider("Image panel width", min_value=300, max_value=800, value=500, step=50, key="sidebar_w")
-annotator = st.sidebar.text_input("Annotator name", value="default")
+annotator = st.text_input("Annotator name", value="default")
 
 if not annotator or annotator.strip() == "":
-    st.warning("Please enter your annotator name in the sidebar.")
+    st.warning("Please enter your annotator name.")
     st.stop()
 
 annotator = annotator.strip()
@@ -464,28 +467,28 @@ annotator = annotator.strip()
 if "idx" not in st.session_state:
     st.session_state.idx = 0
 
-col_p, col_n, col_jump = st.sidebar.columns([1, 1, 2])
-if col_p.button("◀ Prev"):
-    st.session_state.idx = max(0, st.session_state.idx - 1)
-if col_n.button("Next ▶"):
-    st.session_state.idx = min(total - 1, st.session_state.idx + 1)
-jump = col_jump.number_input(
-    "No.", min_value=1, max_value=total,
-    value=st.session_state.idx + 1, label_visibility="collapsed",
-)
-st.session_state.idx = jump - 1
-
 # Done set — keyed by annotator, refreshed on save or annotator change
 done_key = f"done_set_{annotator}"
 if done_key not in st.session_state:
     with st.spinner("Loading progress..."):
         st.session_state[done_key] = get_done_set(annotator)
 
-if st.sidebar.button("⏭ Next incomplete"):
+# Navigation row
+col_p, col_n, col_skip, col_jump = st.columns([1, 1, 1.5, 1.5])
+if col_p.button("◀ Prev", use_container_width=True):
+    st.session_state.idx = max(0, st.session_state.idx - 1)
+if col_n.button("Next ▶", use_container_width=True):
+    st.session_state.idx = min(total - 1, st.session_state.idx + 1)
+if col_skip.button("⏭ Skip done", use_container_width=True):
     for i in range(total):
         if images[i] not in st.session_state[done_key]:
             st.session_state.idx = i
             break
+jump = col_jump.number_input(
+    "No.", min_value=1, max_value=total,
+    value=st.session_state.idx + 1, label_visibility="collapsed",
+)
+st.session_state.idx = jump - 1
 
 idx = st.session_state.idx
 current = images[idx]
@@ -493,19 +496,20 @@ K = f"{current}__{annotator}__"
 
 done_count = len(st.session_state[done_key])
 status = "✅" if current in st.session_state[done_key] else "⬜"
-st.sidebar.markdown(f"{status} **{idx+1}/{total}** `{current}` (done: {done_count})")
+st.markdown(f"{status} **{idx+1}/{total}** `{current}` (done: {done_count})")
 
-# Show image from Drive (in sidebar — stays visible while scrolling right side)
-try:
-    img_bytes = download_image(image_ids[current])
-    st.sidebar.image(img_bytes, use_container_width=True)
-except Exception as e:
-    st.sidebar.error(f"Failed to load image: {e}")
+# Image in expander (works on both mobile and desktop)
+with st.expander("🖼 Image", expanded=True):
+    try:
+        img_bytes = download_image(image_ids[current])
+        st.image(img_bytes, use_container_width=True)
+    except Exception as e:
+        st.error(f"Failed to load image: {e}")
 
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Main area: annotation form (scrolls independently) ─────
+# ─── Annotation form ──────────────────────────────────────────
 
 # ── Pre-scan session_state for positive findings (before rendering) ──
 # This detects which positives are checked from the PREVIOUS render cycle,
@@ -585,17 +589,21 @@ def render_category(label, categories, prefix, saved_data):
                 "<hr style='margin:0.1rem 0; border:none; border-top:1px solid #ddd;'>",
                 unsafe_allow_html=True,
             )
-        if cat_name == "Outer retina-1":
-            col_widths = [1.2, 1, 1.6, 1]
-        else:
-            col_widths = [1.2] + [1] * len(cat_findings)
-        cols = st.columns(col_widths)
-        cols[0].markdown(display)
+
+        if display:
+            st.markdown(display)
+
         saved_cat = saved_data.get(cat_name, [])
         checked = []
-        for fi, f in enumerate(cat_findings):
-            if cols[fi + 1].checkbox(f, value=(f in saved_cat), key=f"{K}{prefix}_{cat_name}_{fi}"):
-                checked.append(f)
+        n = len(cat_findings)
+        cols_per_row = min(n, 4)
+        for row_start in range(0, n, cols_per_row):
+            row_items = cat_findings[row_start:row_start + cols_per_row]
+            cols = st.columns(len(row_items))
+            for ci, f in enumerate(row_items):
+                fi = row_start + ci
+                if cols[ci].checkbox(f, value=(f in saved_cat), key=f"{K}{prefix}_{cat_name}_{fi}"):
+                    checked.append(f)
         data[cat_name] = checked
     return data
 
@@ -631,18 +639,22 @@ has_findings = any(
 
 st.markdown("---")
 
-# Negative findings (1 row)
-neg_cols = st.columns([1.2] + [1] * len(NEG_FINDINGS))
-neg_cols[0].markdown("**Negative**")
+# Negative findings
+st.markdown("**Negative**")
 saved_neg = saved.get("L1_neg", saved.get("L2_neg", NEG_FINDINGS))
 neg_checked = []
-for i, n in enumerate(NEG_FINDINGS):
-    neg_key = f"{K}neg_{i}"
-    if n in forced_off_negatives:
-        neg_cols[i + 1].checkbox(f"~~{n}~~", value=False, disabled=True, key=f"{K}neg_disabled_{i}")
-    else:
-        if neg_cols[i + 1].checkbox(n, value=(n in saved_neg), key=neg_key):
-            neg_checked.append(n)
+neg_per_row = min(len(NEG_FINDINGS), 5)
+for row_start in range(0, len(NEG_FINDINGS), neg_per_row):
+    row_items = NEG_FINDINGS[row_start:row_start + neg_per_row]
+    neg_cols = st.columns(len(row_items))
+    for ci, n in enumerate(row_items):
+        i = row_start + ci
+        neg_key = f"{K}neg_{i}"
+        if n in forced_off_negatives:
+            neg_cols[ci].checkbox(f"~~{n}~~", value=False, disabled=True, key=f"{K}neg_disabled_{i}")
+        else:
+            if neg_cols[ci].checkbox(n, value=(n in saved_neg), key=neg_key):
+                neg_checked.append(n)
 
 st.markdown("---")
 
