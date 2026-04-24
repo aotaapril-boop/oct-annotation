@@ -5,7 +5,6 @@ Annotations: per-annotator Google Sheets (auto-created in same Drive folder)
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 import json
 import io
 import base64
@@ -24,61 +23,14 @@ sidebar_width = st.session_state.get("sidebar_w", 500)
 
 st.markdown(f"""
 <style>
-/* === Desktop: sidebar layout unchanged === */
-@media (min-width: 768px) {{
-    [data-testid="stSidebar"] {{
-        min-width: {sidebar_width}px !important;
-        max-width: {sidebar_width}px !important;
-        width: {sidebar_width}px !important;
-    }}
-    [data-testid="stSidebar"] > div:first-child {{
-        width: {sidebar_width}px !important;
-    }}
-    .mobile-only {{ display: none !important; }}
+/* Sidebar: fixed width controlled by slider */
+[data-testid="stSidebar"] {{
+    min-width: {sidebar_width}px !important;
+    max-width: {sidebar_width}px !important;
+    width: {sidebar_width}px !important;
 }}
-/* === Mobile: hide sidebar, show inline image === */
-@media (max-width: 767px) {{
-    [data-testid="stSidebar"],
-    [data-testid="collapsedControl"],
-    button[kind="header"],
-    header[data-testid="stHeader"] {{
-        display: none !important;
-    }}
-    .block-container {{
-        padding-left: 0.4rem !important;
-        padding-right: 0.4rem !important;
-        padding-top: 33vh !important;
-    }}
-    /* Mobile image: fixed at top of viewport */
-    .mobile-oct-image {{
-        position: fixed !important;
-        top: 0;
-        left: 0;
-        width: 100vw;
-        z-index: 99999;
-        background: #0e1117;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-    }}
-    .mobile-oct-image img {{
-        width: 100%;
-        max-height: 28vh;
-        object-fit: contain;
-        display: block;
-    }}
-    .mobile-oct-info {{
-        color: #fafafa;
-        font-size: 12px;
-        text-align: center;
-        padding: 2px 4px;
-    }}
-    [data-testid="stCheckbox"] label p {{ font-size: 0.8rem; }}
-    [data-testid="stRadio"] label p {{ font-size: 0.82rem; }}
-    button {{ min-height: 2.4rem !important; }}
-    h3 {{ font-size: 0.9rem !important; }}
-}}
-/* Desktop: hide mobile image */
-@media (min-width: 768px) {{
-    .mobile-oct-image {{ display: none !important; }}
+[data-testid="stSidebar"] > div:first-child {{
+    width: {sidebar_width}px !important;
 }}
 .block-container {{ padding-top: 1rem; padding-bottom: 0rem; }}
 h3 {{ margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }}
@@ -87,6 +39,29 @@ hr {{ margin-top: 0.2rem; margin-bottom: 0.2rem; }}
 [data-testid="stRadio"] > div {{ margin-top: -0.5rem; }}
 .fovea-block {{ background-color: #f0f4ff; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }}
 .extrafovea-block {{ background-color: #fff8f0; border-radius: 8px; padding: 0.5rem 0.8rem; margin-bottom: 0.3rem; }}
+/* === Mobile only === */
+@media (min-width: 768px) {{
+    .mobile-oct-image {{ display: none !important; }}
+}}
+@media (max-width: 767px) {{
+    .mobile-oct-image {{
+        position: fixed !important;
+        top: 0; left: 0; width: 100vw;
+        z-index: 99999;
+        background: #0e1117;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }}
+    .mobile-oct-image img {{
+        width: 100%; max-height: 28vh;
+        object-fit: contain; display: block;
+    }}
+    .mobile-oct-info {{
+        color: #fafafa; font-size: 12px;
+        text-align: center; padding: 2px 4px;
+    }}
+    .block-container {{ padding-top: 33vh !important; }}
+    header[data-testid="stHeader"] {{ display: none !important; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -499,17 +474,14 @@ images = [name for name, _ in images_info]
 image_ids = {name: fid for name, fid in images_info}
 total = len(images)
 
-# ─── Annotator name (main area, visible on both mobile & desktop) ───
-annotator = st.text_input("Annotator name", value="default", key="annotator_main")
-
-if not annotator or annotator.strip() == "":
-    st.warning("Please enter your annotator name.")
-    st.stop()
-
 # ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
 
 st.sidebar.slider("Image panel width", min_value=300, max_value=800, value=500, step=50, key="sidebar_w")
-st.sidebar.text_input("Annotator name (sidebar)", value=annotator, key="annotator_sidebar", disabled=True)
+annotator = st.sidebar.text_input("Annotator name", value="default")
+
+if not annotator or annotator.strip() == "":
+    st.warning("Please enter your annotator name in the sidebar.")
+    st.stop()
 
 annotator = annotator.strip()
 
@@ -557,7 +529,7 @@ except Exception as e:
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Mobile: show image inline (hidden on desktop via CSS) ───
+# ─── Mobile: show image in main area (hidden on desktop via CSS) ───
 img_b64 = base64.b64encode(img_bytes).decode()
 st.markdown(f"""
 <div class="mobile-oct-image" id="mobile-oct-image">
@@ -565,43 +537,6 @@ st.markdown(f"""
     <div class="mobile-oct-info">{status} {idx+1}/{total} &mdash; {current} (done: {done_count})</div>
 </div>
 """, unsafe_allow_html=True)
-
-# JS: ensure fixed positioning works by removing transform from ancestors
-components.html("""
-<script>
-(function() {
-    try {
-        var p = window.parent.document;
-        if (window.parent.innerWidth >= 768) return;
-        var img = p.getElementById('mobile-oct-image');
-        if (!img) return;
-        // Remove transform/will-change from ancestors (they break position:fixed)
-        var el = img.parentElement;
-        while (el && el !== p.body && el !== p.documentElement) {
-            el.style.setProperty('transform', 'none', 'important');
-            el.style.setProperty('will-change', 'auto', 'important');
-            el = el.parentElement;
-        }
-    } catch(e) {}
-})();
-</script>
-""", height=0)
-
-# Mobile navigation (Streamlit widgets — work without JS)
-mob_prev, mob_jump, mob_next = st.columns([1, 2, 1])
-if mob_prev.button("◀ Prev", key="mob_prev"):
-    st.session_state.idx = max(0, st.session_state.idx - 1)
-    st.rerun()
-mob_jump_val = mob_jump.number_input(
-    "Jump to", min_value=1, max_value=total,
-    value=st.session_state.idx + 1, key="mob_jump", label_visibility="collapsed",
-)
-if mob_jump_val - 1 != st.session_state.idx:
-    st.session_state.idx = mob_jump_val - 1
-    st.rerun()
-if mob_next.button("Next ▶", key="mob_next"):
-    st.session_state.idx = min(total - 1, st.session_state.idx + 1)
-    st.rerun()
 
 # ─── Main area: annotation form (scrolls independently) ─────
 
