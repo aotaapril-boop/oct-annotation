@@ -60,8 +60,15 @@ hr {{ margin-top: 0.2rem; margin-bottom: 0.2rem; }}
         text-align: center; padding: 2px 4px;
     }}
     .block-container {{ padding-top: calc(28vh + 5rem) !important; }}
-    /* Sidebar overlay must be above fixed image so it can be closed */
-    [data-testid="stSidebar"] {{ z-index: 999999 !important; }}
+    /* Sidebar + overlay + close button must be above fixed image */
+    [data-testid="stSidebar"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"],
+    .stSidebarNav,
+    [data-testid="stSidebar"] ~ div,
+    header[data-testid="stHeader"] {{
+        z-index: 999999 !important;
+    }}
 }}
 </style>
 """, unsafe_allow_html=True)
