@@ -49,6 +49,20 @@ st.markdown(f"""
         padding-right: 0.4rem !important;
         padding-top: 0.3rem !important;
     }}
+    .mobile-image-block {{
+        position: sticky;
+        top: 0;
+        z-index: 9999;
+        background: #0e1117;
+        padding-bottom: 2px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }}
+    /* Ensure sticky works: no overflow:hidden on ancestors */
+    section.main, .block-container,
+    [data-testid="stMainBlockContainer"],
+    [data-testid="stVerticalBlock"] {{
+        overflow: visible !important;
+    }}
     [data-testid="stCheckbox"] label p {{ font-size: 0.8rem; }}
     [data-testid="stRadio"] label p {{ font-size: 0.82rem; }}
     button {{ min-height: 2.4rem !important; }}
