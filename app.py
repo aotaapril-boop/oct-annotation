@@ -46,7 +46,7 @@ hr {{ margin-top: 0.2rem; margin-bottom: 0.2rem; }}
 @media (max-width: 767px) {{
     .mobile-oct-image {{
         position: fixed !important;
-        top: 0; left: 0; width: 100vw;
+        top: 3rem; left: 0; width: 100vw;
         z-index: 99999;
         background: #0e1117;
         box-shadow: 0 2px 8px rgba(0,0,0,0.5);
@@ -59,7 +59,7 @@ hr {{ margin-top: 0.2rem; margin-bottom: 0.2rem; }}
         color: #fafafa; font-size: 12px;
         text-align: center; padding: 2px 4px;
     }}
-    .block-container {{ padding-top: 33vh !important; }}
+    .block-container {{ padding-top: calc(28vh + 5rem) !important; }}
     /* Sidebar overlay must be above fixed image so it can be closed */
     [data-testid="stSidebar"] {{ z-index: 999999 !important; }}
 }}
