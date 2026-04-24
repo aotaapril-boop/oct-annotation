@@ -5,6 +5,7 @@ Annotations: per-annotator Google Sheets (auto-created in same Drive folder)
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import json
 import io
 import base64
@@ -46,20 +47,21 @@ st.markdown(f"""
     .block-container {{
         padding-left: 0.4rem !important;
         padding-right: 0.4rem !important;
-        padding-top: 0.3rem !important;
+        padding-top: 33vh !important;
     }}
-    /* Mobile image: sticky at top */
+    /* Mobile image: fixed at top of viewport */
     .mobile-oct-image {{
-        position: -webkit-sticky;
-        position: sticky;
+        position: fixed !important;
         top: 0;
-        z-index: 9999;
+        left: 0;
+        width: 100vw;
+        z-index: 99999;
         background: #0e1117;
         box-shadow: 0 2px 8px rgba(0,0,0,0.5);
     }}
     .mobile-oct-image img {{
         width: 100%;
-        max-height: 30vh;
+        max-height: 28vh;
         object-fit: contain;
         display: block;
     }}
@@ -68,20 +70,6 @@ st.markdown(f"""
         font-size: 12px;
         text-align: center;
         padding: 2px 4px;
-    }}
-    /* Force all ancestors to allow sticky */
-    section.main,
-    .main,
-    [data-testid="stMain"],
-    [data-testid="stMainBlockContainer"],
-    [data-testid="stVerticalBlock"],
-    [data-testid="stVerticalBlockBorderWrapper"],
-    .block-container,
-    .stApp,
-    [data-testid="stAppViewContainer"],
-    [data-testid="stAppViewBlockContainer"],
-    .element-container {{
-        overflow: visible !important;
     }}
     [data-testid="stCheckbox"] label p {{ font-size: 0.8rem; }}
     [data-testid="stRadio"] label p {{ font-size: 0.82rem; }}
@@ -572,11 +560,32 @@ saved = load_annotation(current, annotator)
 # ─── Mobile: show image inline (hidden on desktop via CSS) ───
 img_b64 = base64.b64encode(img_bytes).decode()
 st.markdown(f"""
-<div class="mobile-oct-image">
+<div class="mobile-oct-image" id="mobile-oct-image">
     <img src="data:image/jpeg;base64,{img_b64}" />
     <div class="mobile-oct-info">{status} {idx+1}/{total} &mdash; {current} (done: {done_count})</div>
 </div>
 """, unsafe_allow_html=True)
+
+# JS: ensure fixed positioning works by removing transform from ancestors
+components.html("""
+<script>
+(function() {
+    try {
+        var p = window.parent.document;
+        if (window.parent.innerWidth >= 768) return;
+        var img = p.getElementById('mobile-oct-image');
+        if (!img) return;
+        // Remove transform/will-change from ancestors (they break position:fixed)
+        var el = img.parentElement;
+        while (el && el !== p.body && el !== p.documentElement) {
+            el.style.setProperty('transform', 'none', 'important');
+            el.style.setProperty('will-change', 'auto', 'important');
+            el = el.parentElement;
+        }
+    } catch(e) {}
+})();
+</script>
+""", height=0)
 
 # Mobile navigation (Streamlit widgets — work without JS)
 mob_prev, mob_jump, mob_next = st.columns([1, 2, 1])
