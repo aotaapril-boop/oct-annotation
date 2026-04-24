@@ -32,7 +32,7 @@ st.markdown(f"""
 [data-testid="stSidebar"] > div:first-child {{
     width: {sidebar_width}px !important;
 }}
-.block-container {{ padding-top: 1rem; padding-bottom: 0rem; }}
+.block-container {{ padding-top: 2.5rem; padding-bottom: 0rem; }}
 h3 {{ margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }}
 hr {{ margin-top: 0.2rem; margin-bottom: 0.2rem; }}
 [data-testid="stCheckbox"] {{ margin-bottom: -0.8rem; }}
