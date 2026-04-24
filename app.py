@@ -48,10 +48,49 @@ st.markdown(f"""
         padding-right: 0.4rem !important;
         padding-top: 0.3rem !important;
     }}
+    /* Mobile image: sticky at top */
+    .mobile-oct-image {{
+        position: -webkit-sticky;
+        position: sticky;
+        top: 0;
+        z-index: 9999;
+        background: #0e1117;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }}
+    .mobile-oct-image img {{
+        width: 100%;
+        max-height: 30vh;
+        object-fit: contain;
+        display: block;
+    }}
+    .mobile-oct-info {{
+        color: #fafafa;
+        font-size: 12px;
+        text-align: center;
+        padding: 2px 4px;
+    }}
+    /* Force all ancestors to allow sticky */
+    section.main,
+    .main,
+    [data-testid="stMain"],
+    [data-testid="stMainBlockContainer"],
+    [data-testid="stVerticalBlock"],
+    [data-testid="stVerticalBlockBorderWrapper"],
+    .block-container,
+    .stApp,
+    [data-testid="stAppViewContainer"],
+    [data-testid="stAppViewBlockContainer"],
+    .element-container {{
+        overflow: visible !important;
+    }}
     [data-testid="stCheckbox"] label p {{ font-size: 0.8rem; }}
     [data-testid="stRadio"] label p {{ font-size: 0.82rem; }}
     button {{ min-height: 2.4rem !important; }}
     h3 {{ font-size: 0.9rem !important; }}
+}}
+/* Desktop: hide mobile image */
+@media (min-width: 768px) {{
+    .mobile-oct-image {{ display: none !important; }}
 }}
 .block-container {{ padding-top: 1rem; padding-bottom: 0rem; }}
 h3 {{ margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }}
@@ -530,34 +569,14 @@ except Exception as e:
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Mobile: fixed image via st.html (JS injects into parent DOM) ───
+# ─── Mobile: show image inline (hidden on desktop via CSS) ───
 img_b64 = base64.b64encode(img_bytes).decode()
-st.html(f"""
-<script>
-(function() {{
-    var pd = window.parent.document;
-    // Remove previous instance
-    var old = pd.getElementById('oct-mobile-img');
-    if (old) old.remove();
-    // Only on mobile
-    if (window.parent.innerWidth >= 768) return;
-    // Create fixed container
-    var div = pd.createElement('div');
-    div.id = 'oct-mobile-img';
-    div.innerHTML = '<img src="data:image/jpeg;base64,{img_b64}" />'
-        + '<div class="oct-info"><b>{status} {idx+1}/{total}</b> &nbsp; {current} &nbsp; (done: {done_count})</div>';
-    div.style.cssText = 'position:fixed;top:0;left:0;width:100vw;z-index:99999;background:#0e1117;box-shadow:0 2px 8px rgba(0,0,0,0.6);';
-    var img = div.querySelector('img');
-    img.style.cssText = 'width:100%;max-height:30vh;object-fit:contain;display:block;';
-    var info = div.querySelector('.oct-info');
-    info.style.cssText = 'color:#fafafa;font-size:13px;text-align:center;padding:2px 6px;';
-    pd.body.appendChild(div);
-    // Add padding to main content so it's not hidden behind image
-    var main = pd.querySelector('section.main');
-    if (main) main.style.paddingTop = '35vh';
-}})();
-</script>
-""")
+st.markdown(f"""
+<div class="mobile-oct-image">
+    <img src="data:image/jpeg;base64,{img_b64}" />
+    <div class="mobile-oct-info">{status} {idx+1}/{total} &mdash; {current} (done: {done_count})</div>
+</div>
+""", unsafe_allow_html=True)
 
 # Mobile navigation (Streamlit widgets — work without JS)
 mob_prev, mob_jump, mob_next = st.columns([1, 2, 1])
