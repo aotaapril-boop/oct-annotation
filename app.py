@@ -60,14 +60,18 @@ hr {{ margin-top: 0.2rem; margin-bottom: 0.2rem; }}
         text-align: center; padding: 2px 4px;
     }}
     .block-container {{ padding-top: calc(28vh + 5rem) !important; }}
-    /* Sidebar + overlay + close button must be above fixed image */
-    [data-testid="stSidebar"],
-    [data-testid="stSidebarCollapsedControl"],
-    [data-testid="collapsedControl"],
-    .stSidebarNav,
-    [data-testid="stSidebar"] ~ div,
-    header[data-testid="stHeader"] {{
+    /* Sidebar fully covers screen when open on mobile */
+    [data-testid="stSidebar"] {{
         z-index: 999999 !important;
+    }}
+    [data-testid="stSidebar"][aria-expanded="true"] {{
+        position: fixed !important;
+        top: 0; left: 0;
+        width: 100vw !important;
+        height: 100vh !important;
+        min-width: 100vw !important;
+        max-width: 100vw !important;
+        background: #0e1117 !important;
     }}
 }}
 </style>
