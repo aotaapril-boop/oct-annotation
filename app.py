@@ -34,7 +34,6 @@ st.markdown(f"""
         width: {sidebar_width}px !important;
     }}
     .mobile-only {{ display: none !important; }}
-    .mobile-image-block {{ display: none !important; }}
 }}
 /* === Mobile: hide sidebar, show inline image === */
 @media (max-width: 767px) {{
@@ -48,20 +47,6 @@ st.markdown(f"""
         padding-left: 0.4rem !important;
         padding-right: 0.4rem !important;
         padding-top: 0.3rem !important;
-    }}
-    .mobile-image-block {{
-        position: sticky;
-        top: 0;
-        z-index: 9999;
-        background: #0e1117;
-        padding-bottom: 2px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-    }}
-    /* Ensure sticky works: no overflow:hidden on ancestors */
-    section.main, .block-container,
-    [data-testid="stMainBlockContainer"],
-    [data-testid="stVerticalBlock"] {{
-        overflow: visible !important;
     }}
     [data-testid="stCheckbox"] label p {{ font-size: 0.8rem; }}
     [data-testid="stRadio"] label p {{ font-size: 0.82rem; }}
@@ -545,16 +530,34 @@ except Exception as e:
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Mobile: inline image + nav (st.markdown, not iframe) ───
+# ─── Mobile: fixed image via st.html (JS injects into parent DOM) ───
 img_b64 = base64.b64encode(img_bytes).decode()
-st.markdown(f"""
-<div class="mobile-image-block">
-    <img src="data:image/jpeg;base64,{img_b64}" style="width:100%; max-height:35vh; object-fit:contain; display:block;" />
-    <div style="color:#fafafa; font-size:13px; text-align:center; padding:2px 6px;">
-        <b>{status} {idx+1}/{total}</b> &nbsp; {current} &nbsp; (done: {done_count})
-    </div>
-</div>
-""", unsafe_allow_html=True)
+st.html(f"""
+<script>
+(function() {{
+    var pd = window.parent.document;
+    // Remove previous instance
+    var old = pd.getElementById('oct-mobile-img');
+    if (old) old.remove();
+    // Only on mobile
+    if (window.parent.innerWidth >= 768) return;
+    // Create fixed container
+    var div = pd.createElement('div');
+    div.id = 'oct-mobile-img';
+    div.innerHTML = '<img src="data:image/jpeg;base64,{img_b64}" />'
+        + '<div class="oct-info"><b>{status} {idx+1}/{total}</b> &nbsp; {current} &nbsp; (done: {done_count})</div>';
+    div.style.cssText = 'position:fixed;top:0;left:0;width:100vw;z-index:99999;background:#0e1117;box-shadow:0 2px 8px rgba(0,0,0,0.6);';
+    var img = div.querySelector('img');
+    img.style.cssText = 'width:100%;max-height:30vh;object-fit:contain;display:block;';
+    var info = div.querySelector('.oct-info');
+    info.style.cssText = 'color:#fafafa;font-size:13px;text-align:center;padding:2px 6px;';
+    pd.body.appendChild(div);
+    // Add padding to main content so it's not hidden behind image
+    var main = pd.querySelector('section.main');
+    if (main) main.style.paddingTop = '35vh';
+}})();
+</script>
+""")
 
 # Mobile navigation (Streamlit widgets — work without JS)
 mob_prev, mob_jump, mob_next = st.columns([1, 2, 1])
