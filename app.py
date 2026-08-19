@@ -101,6 +101,20 @@ def get_gspread_client():
 DRIVE_IMAGES_FOLDER_ID = st.secrets["drive_images_folder_id"]
 DRIVE_SHEETS_FOLDER_ID = st.secrets["drive_sheets_folder_id"]
 
+# キャプション比較レポート（compare_v5_19_retest_Recall）で使った40サンプル。
+# サイドバーのトグルで「この40枚のみ / 全画像」を切り替える。
+SUBSET_40 = {
+    "BRVO_002.png", "BRVO_009.png", "BRVO_014.png", "BRVO_023.png", "BRVO_031.png",
+    "BRVO_034.png", "BRVO_073.png", "BRVO_074.png", "BRVO_077.png", "BRVO_086.png",
+    "BRVO_102.png", "BRVO_117.png", "BRVO_118.png", "BRVO_124.png", "BRVO_126.png",
+    "BRVO_127.png", "BRVO_135.png", "BRVO_139.png",
+    "CAT_006.png", "CAT_010.png", "CAT_027.png", "CAT_036.png", "CAT_038.png",
+    "CAT_046.png", "CAT_051.png", "CAT_061.png", "CAT_062.png", "CAT_082.png",
+    "CAT_088.png", "CAT_089.png", "CAT_096.png", "CAT_099.png", "CAT_110.png",
+    "CAT_111.png", "CAT_149.png", "CAT_156.png", "CAT_165.png", "CAT_174.png",
+    "CAT_180.png", "CAT_189.png",
+}
+
 # ─── Google Drive: list & fetch images ───────────────────────
 
 @st.cache_data(ttl=300)
@@ -490,9 +504,26 @@ if not images_info:
     st.error("No images found in Google Drive folder. Check folder ID and permissions.")
     st.stop()
 
+# 画像セットの切替（40枚のみ / 全画像）。デフォルトは40枚。
+image_set = st.sidebar.radio(
+    "Image set",
+    ["40 subset", "All images"],
+    index=0,
+    horizontal=True,
+    key="image_set",
+    help="40 subset = キャプション比較で使った40枚のみ。All = Driveの全画像。",
+)
+if image_set == "40 subset":
+    filtered = [(n, i) for (n, i) in images_info if n in SUBSET_40]
+    if filtered:
+        images_info = filtered
+    else:
+        st.sidebar.warning("40枚のうちDriveに見つかった画像がありません。全画像を表示します。")
+
 images = [name for name, _ in images_info]
 image_ids = {name: fid for name, fid in images_info}
 total = len(images)
+st.sidebar.caption(f"{'40枚のみ' if image_set == '40 subset' else '全画像'}: {total} 枚")
 
 # ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
 
@@ -506,6 +537,12 @@ if not annotator or annotator.strip() == "":
 annotator = annotator.strip()
 
 if "idx" not in st.session_state:
+    st.session_state.idx = 0
+
+# 画像セット切替で件数が減ったとき、idx が範囲外にならないよう丸める
+if st.session_state.idx > total - 1:
+    st.session_state.idx = total - 1
+if st.session_state.idx < 0:
     st.session_state.idx = 0
 
 col_p, col_n, col_jump = st.sidebar.columns([1, 1, 2])
