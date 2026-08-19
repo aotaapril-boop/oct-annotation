@@ -140,9 +140,8 @@ def preload_nearby_images(current_idx, image_ids_list, count=2):
 HEADER_ROW = [
     "image", "annotator", "saved_at",
     "scan_type", "scan_location", "quality",
-    "fovea_VRI", "fovea_intraretinal", "fovea_outer_retina",
-    "extrafovea_VRI", "extrafovea_intraretinal", "extrafovea_outer_retina",
-    "extrafovea_choroid",
+    # 部位（fovea/extrafovea）を区別しない統合列
+    "VRI", "intraretinal", "outer_retina", "choroid",
     "negative_findings",
     "L2_abnormality", "L3_management", "caption", "auto_caption",
     "raw_json",
@@ -166,7 +165,9 @@ def _get_or_create_sheet(annotator):
     if cache_key in st.session_state:
         return st.session_state[cache_key]
 
-    sheet_name = f"OCT_annotations_{annotator}"
+    # v2: 部位（fovea/extrafovea）統合・フルスペル化に伴い列構造を変更。
+    # 旧シート（OCT_annotations_<名前>）はそのまま残り、過去データは失われない。
+    sheet_name = f"OCT_annotations_v2_{annotator}"
     service = get_drive_service()
 
     query = (
@@ -285,28 +286,30 @@ def flatten_to_row(data):
         "scan_location": data.get("scan_loc", ""),
         "quality": data.get("quality", ""),
     }
+    # 部位を区別せず、カテゴリ単位（VRI / intraretinal / outer_retina / choroid）に集約。
+    # 過去データが fovea/extrafovea 別に入っていても、ここで1つにまとめて出力する。
     loc_findings = data.get("L1_loc_findings", {})
+    cat_merged = {"VRI": [], "intraretinal": [], "outer_retina": [], "choroid": []}
     for loc_key, loc_data in loc_findings.items():
-        loc_short = "fovea" if "Fovea" in loc_key else "extrafovea"
-        if isinstance(loc_data, dict):
-            merged_cats = {}
-            for cat_name, findings in loc_data.items():
-                base = cat_name.replace("-1", "").replace("-2", "")
-                if base not in merged_cats:
-                    merged_cats[base] = []
-                merged_cats[base].extend(findings)
-            for base_cat, findings in merged_cats.items():
-                if "VRI" in base_cat:
-                    cat_short = "VRI"
-                elif "Intraretinal" in base_cat:
-                    cat_short = "intraretinal"
-                elif "Outer" in base_cat:
-                    cat_short = "outer_retina"
-                elif "Choroid" in base_cat:
-                    cat_short = "choroid"
-                else:
-                    cat_short = base_cat
-                row[f"{loc_short}_{cat_short}"] = "; ".join(findings) if findings else ""
+        if not isinstance(loc_data, dict):
+            continue
+        for cat_name, findings in loc_data.items():
+            base = cat_name.replace("-1", "").replace("-2", "")
+            if "VRI" in base:
+                cat_short = "VRI"
+            elif "Intraretinal" in base:
+                cat_short = "intraretinal"
+            elif "Outer" in base:
+                cat_short = "outer_retina"
+            elif "Choroid" in base:
+                cat_short = "choroid"
+            else:
+                continue
+            for f in (findings or []):
+                if f not in cat_merged[cat_short]:
+                    cat_merged[cat_short].append(f)
+    for cat_short, findings in cat_merged.items():
+        row[cat_short] = "; ".join(findings) if findings else ""
 
     row["negative_findings"] = "; ".join(data.get("L1_neg", []))
     row["L2_abnormality"] = data.get("L2", "")
@@ -319,23 +322,41 @@ def flatten_to_row(data):
 
 # ─── Auto Caption Generation ─────────────────────────────────
 
-# Negative finding labels as-is (no expansion)
-NEG_LABELS = ["no SRF", "no IRF", "no PED", "EZ intact", "no ERM"]
+# ─── Auto Caption Generation (改訂版) ─────────────────────────
 
-# Location labels -> readable location text
-LOCATION_MAP = {
-    "fovea_VRI": "vitreoretinal interface at the fovea",
-    "fovea_intraretinal": "intraretinal layers at the fovea",
-    "fovea_outer_retina": "outer retina at the fovea",
-    "extrafovea_VRI": "vitreoretinal interface in the extrafoveal area",
-    "extrafovea_intraretinal": "intraretinal layers in the extrafoveal area",
-    "extrafovea_outer_retina": "outer retina in the extrafoveal area",
-    "extrafovea_choroid": "choroid in the extrafoveal area",
+# フルスペル対応表（確定版）
+FULLSPELL = {
+    "PVD": "posterior vitreous detachment (PVD)",
+    "ERM": "epiretinal membrane (ERM)",
+    "VMT": "vitreomacular traction (VMT)",
+    "VH": "vitreous hemorrhage (VH)",
+    "IRF": "intraretinal fluid (IRF)",
+    "hemorrhage": "retinal hemorrhage",
+    "retinal thickening": "retinal thickening",
+    "tractional thickening": "tractional retinal thickening",
+    "inner thinning": "inner retinal thinning",
+    "hyperreflective foci": "hyperreflective foci",
+    "hard exudates": "hard exudates",
+    "SRF": "subretinal fluid (SRF)",
+    "subretinal hemorrhage": "subretinal hemorrhage",
+    "serous PED": "serous pigment epithelial detachment (serous PED)",
+    "SHRM": "subretinal hyperreflective material (SHRM)",
+    "EZ disruption": "ellipsoid zone (EZ) disruption",
+    "outer atrophy": "outer retinal atrophy",
+    "drusen": "drusen",
+    "choroidal thickening": "choroidal thickening",
+    "choroidal thinning": "choroidal thinning",
+}
+NEG_FULLSPELL = {
+    "no SRF": "no subretinal fluid (SRF)",
+    "no IRF": "no intraretinal fluid (IRF)",
+    "no PED": "no pigment epithelial detachment (PED)",
+    "EZ intact": "intact ellipsoid zone (EZ)",
+    "no ERM": "no epiretinal membrane (ERM)",
 }
 
 
 def _join_english_list(items):
-    """Join list into English: 'a', 'a and b', 'a, b, and c'."""
     if not items:
         return ""
     if len(items) == 1:
@@ -345,96 +366,71 @@ def _join_english_list(items):
     return ", ".join(items[:-1]) + ", and " + items[-1]
 
 
-def _expand_finding(name):
-    """Return finding name as-is."""
-    return name
+def _full(name):
+    """所見名をフルスペル(略語)へ。未定義はそのまま。"""
+    return FULLSPELL.get(name, name)
 
 
 def generate_caption(data):
-    """Generate a deterministic English caption from structured annotation data.
-
-    Rules:
-    - Only use information present in the data
-    - No diagnostic interpretation or inference
-    - Deterministic: same input always produces same output
+    """Deterministic English caption. 部位は区別しない。
+    - 所見があれば normal でも abnormal 扱い
+    - poor + 所見 → 慎重解釈を促す1文
+    - 所見はフルスペル(略語)で記述
     """
     sentences = []
 
-    # 1. Image quality
+    # ---- 全所見を部位区別なしで集約（順序は定義順を維持） ----
+    loc_findings = data.get("L1_loc_findings", {})
+    findings_all = []  # フラットな所見リスト（重複除去・順序維持）
+    seen = set()
+    for loc_data in loc_findings.values():
+        if not isinstance(loc_data, dict):
+            continue
+        for findings_list in loc_data.values():
+            for f in (findings_list or []):
+                if f and f != "other" and f not in seen:
+                    seen.add(f)
+                    findings_all.append(f)
+    has_findings = len(findings_all) > 0
+
     quality = (data.get("quality") or "").strip().lower()
+
+    # 1. Image quality
     if quality == "good":
         sentences.append("Image quality is sufficient for evaluation.")
     elif quality == "fair":
         sentences.append("Image quality is limited but adequate for evaluation.")
     elif quality == "poor":
-        sentences.append("The image is not adequate for full evaluation.")
+        if has_findings:
+            sentences.append("Image quality is poor; findings should be interpreted with caution.")
+        else:
+            sentences.append("The image is not adequate for full evaluation.")
 
-    # 2. Abnormality presence
+    # 2. Abnormality presence（所見があれば abnormal 扱い）
     abnormality = (data.get("L2") or "").strip().lower()
-    if abnormality == "normal":
+    if has_findings:
+        sentences.append("Abnormal findings are present.")
+    elif abnormality == "normal":
         sentences.append("No abnormal findings are present.")
     elif abnormality == "abnormal":
         sentences.append("Abnormal findings are present.")
     elif abnormality == "uncertain":
         sentences.append("The presence of abnormality is uncertain.")
 
-    # 3. Location + 4. Positive findings — collect per location
-    loc_findings = data.get("L1_loc_findings", {})
-    all_findings = []  # (location_label, [findings])
-    for loc_key, loc_data in sorted(loc_findings.items()):
-        if not isinstance(loc_data, dict):
-            continue
-        loc_short = "fovea" if "Fovea" in loc_key else "extrafovea"
-        for cat_name, findings_list in sorted(loc_data.items()):
-            if not findings_list:
-                continue
-            base = cat_name.replace("-1", "").replace("-2", "")
-            if "VRI" in base:
-                loc_label = f"{loc_short}_VRI"
-            elif "Intraretinal" in base:
-                loc_label = f"{loc_short}_intraretinal"
-            elif "Outer" in base:
-                loc_label = f"{loc_short}_outer_retina"
-            elif "Choroid" in base:
-                loc_label = f"{loc_short}_choroid"
-            else:
-                loc_label = loc_short
-            all_findings.append((loc_label, findings_list))
-
-    # Merge findings by location
-    merged = {}
-    for loc_label, findings_list in all_findings:
-        if loc_label not in merged:
-            merged[loc_label] = []
-        merged[loc_label].extend(findings_list)
-
-    # Build location + findings sentences (fovea before extrafovea)
-    LOC_ORDER = [
-        "fovea_VRI", "fovea_intraretinal", "fovea_outer_retina",
-        "extrafovea_VRI", "extrafovea_intraretinal", "extrafovea_outer_retina", "extrafovea_choroid",
-    ]
-    ordered_keys = [k for k in LOC_ORDER if k in merged] + [k for k in merged if k not in LOC_ORDER]
-    for loc_label in ordered_keys:
-        findings_list = merged[loc_label]
-        expanded = [_expand_finding(f) for f in findings_list if f and f != "other"]
-        if not expanded:
-            continue
-        location_text = LOCATION_MAP.get(loc_label, loc_label.replace("_", " "))
+    # 3. Findings（部位なし・フルスペル・1文にまとめる）
+    if has_findings:
+        expanded = [_full(f) for f in findings_all]
         findings_text = _join_english_list(expanded)
-        sentences.append(
-            f"{findings_text[0].upper() + findings_text[1:]} {'is' if len(expanded) == 1 else 'are'} "
-            f"observed in the {location_text}."
-        )
+        verb = "is" if len(expanded) == 1 else "are"
+        sentences.append(f"{findings_text[0].upper() + findings_text[1:]} {verb} observed.")
 
-    # 5. Negative findings
+    # 4. Negative findings（フルスペル）
     neg_list = data.get("L1_neg", [])
-    if neg_list:
-        valid_neg = [n for n in neg_list if n and n.strip()]
-        if valid_neg:
-            neg_text = _join_english_list(valid_neg)
-            sentences.append(f"Negative findings: {neg_text}.")
+    valid_neg = [NEG_FULLSPELL.get(n, n) for n in neg_list if n and n.strip()]
+    if valid_neg:
+        sentences.append(f"Negative findings: {_join_english_list(valid_neg)}.")
 
-    # 6. Management
+    # 5. Management
     mgmt = (data.get("L3_mgmt") or "").strip().lower()
     if mgmt == "observation":
         sentences.append("Observation is recommended.")
@@ -463,6 +459,18 @@ EXTRAFOVEA_CATEGORIES = {
     "Outer retina-2":   ["SHRM", "EZ disruption", "outer atrophy", "drusen"],
     "Choroid":          ["choroidal thickening", "choroidal thinning"],
 }
+
+# 部位（fovea/extrafovea）を区別しない統合カテゴリ（Choroid を含む上位集合）。
+# 保存時はこの1セットを従来の "Fovea (<500um)" キーに入れて、既存の列構造・過去データを壊さない。
+FINDING_CATEGORIES = {
+    "VRI":              ["PVD", "ERM", "VMT", "VH"],
+    "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
+    "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
+    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED"],
+    "Outer retina-2":   ["SHRM", "EZ disruption", "outer atrophy", "drusen"],
+    "Choroid":          ["choroidal thickening", "choroidal thinning"],
+}
+UNIFIED_LOC_KEY = "Fovea (<500um)"   # 統合後の保存先キー（過去データ互換のため既存キー名を流用）
 
 NEG_FINDINGS = ["no SRF", "no IRF", "no PED", "EZ intact", "no ERM"]
 
@@ -559,7 +567,7 @@ st.markdown(f"""
 def _read_positives_from_session():
     """Read currently checked positive findings from session_state keys."""
     positives = set()
-    for prefix, categories in [("fov", FOVEA_CATEGORIES), ("ext", EXTRAFOVEA_CATEGORIES)]:
+    for prefix, categories in [("unif", FINDING_CATEGORIES)]:
         for cat_name, cat_findings in categories.items():
             for fi, f in enumerate(cat_findings):
                 key = f"{K}{prefix}_{cat_name}_{fi}"
@@ -644,16 +652,20 @@ def render_category(label, categories, prefix, saved_data):
         data[cat_name] = checked
     return data
 
-fovea_label = "Fovea (<500um)"
-saved_fovea = saved_loc_findings.get(fovea_label, {})
-st.markdown('<div class="fovea-block">', unsafe_allow_html=True)
-loc_findings[fovea_label] = render_category(fovea_label, FOVEA_CATEGORIES, "fov", saved_fovea)
-st.markdown('</div>', unsafe_allow_html=True)
+# 部位を区別しない統合入力。過去データ（fovea/extrafovea 別）はカテゴリ単位で
+# マージして表示し、保存は UNIFIED_LOC_KEY の1セットにまとめる（既存の列構造は維持）。
+saved_unified = {}
+for _loc_key, _loc_data in saved_loc_findings.items():
+    if not isinstance(_loc_data, dict):
+        continue
+    for _cat, _finds in _loc_data.items():
+        merged = saved_unified.setdefault(_cat, [])
+        for _f in (_finds or []):
+            if _f not in merged:
+                merged.append(_f)
 
-extra_label = "Extrafovea (>500um)"
-saved_extra = saved_loc_findings.get(extra_label, {})
-st.markdown('<div class="extrafovea-block">', unsafe_allow_html=True)
-loc_findings[extra_label] = render_category(extra_label, EXTRAFOVEA_CATEGORIES, "ext", saved_extra)
+st.markdown('<div class="fovea-block">', unsafe_allow_html=True)
+loc_findings[UNIFIED_LOC_KEY] = render_category("Findings", FINDING_CATEGORIES, "unif", saved_unified)
 st.markdown('</div>', unsafe_allow_html=True)
 
 # Recalculate positives from actual rendered checkboxes (for has_findings & save)
