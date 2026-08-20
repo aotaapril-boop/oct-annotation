@@ -497,6 +497,41 @@ POS_TO_NEG = {
     "ERM": "no ERM",
 }
 
+
+def reconcile_annotation(loc_findings, neg_checked, l2, mgmt):
+    """入力内容の整合を取る（Auto Generate / Save 時に呼ぶ）。
+    フォーム化で入力中はリアルタイム連動しないため、確定時にまとめて補正する。
+    返り値: (neg_checked, l2, mgmt, has_findings)
+    """
+    # 陽性所見を集める
+    positives = set()
+    for loc_data in loc_findings.values():
+        if isinstance(loc_data, dict):
+            for finds in loc_data.values():
+                for f in (finds or []):
+                    if f and f != "other":
+                        positives.add(f)
+    has_findings = len(positives) > 0
+
+    # 1) 陽性↔陰性の矛盾を解消（陽性がある陰性所見は外す）
+    drop_neg = {neg for pos, neg in POS_TO_NEG.items() if pos in positives}
+    neg_checked = [n for n in neg_checked if n not in drop_neg]
+
+    # 2) 所見があれば L2 を abnormal に、なければ normal に補正
+    if has_findings:
+        l2 = "abnormal"
+    elif l2 == "abnormal":
+        l2 = "normal"
+
+    # 3) 所見があるのに方針が「no abnormality」なら observation に、
+    #    所見が無いのに治療系なら no abnormality に補正
+    if has_findings and mgmt == "no abnormality":
+        mgmt = "observation"
+    elif not has_findings and mgmt in ("observation", "further exam", "treatment"):
+        mgmt = "no abnormality"
+
+    return neg_checked, l2, mgmt, has_findings
+
 # ─── Image list ──────────────────────────────────────────────
 
 images_info = get_image_list()
@@ -597,64 +632,10 @@ st.markdown(f"""
 
 # ─── Main area: annotation form (scrolls independently) ─────
 
-# ── Pre-scan session_state for positive findings (before rendering) ──
-# This detects which positives are checked from the PREVIOUS render cycle,
-# so we can force-clear conflicting negatives BEFORE they are rendered.
-
-def _read_positives_from_session():
-    """Read currently checked positive findings from session_state keys."""
-    positives = set()
-    for prefix, categories in [("unif", FINDING_CATEGORIES)]:
-        for cat_name, cat_findings in categories.items():
-            for fi, f in enumerate(cat_findings):
-                key = f"{K}{prefix}_{cat_name}_{fi}"
-                if st.session_state.get(key, False):
-                    positives.add(f)
-    return positives
-
-prev_positives = _read_positives_from_session()
-forced_off_negatives = set()
-for pos_finding, neg_finding in POS_TO_NEG.items():
-    if pos_finding in prev_positives:
-        forced_off_negatives.add(neg_finding)
-
-# Force-clear conflicting negative checkboxes in session_state BEFORE rendering
-NEG_TO_INDEX = {n: i for i, n in enumerate(NEG_FINDINGS)}
-for neg in forced_off_negatives:
-    neg_key = f"{K}neg_{NEG_TO_INDEX[neg]}"
-    if st.session_state.get(neg_key, False):
-        st.session_state[neg_key] = False
-
-c1, c2 = st.columns([1, 1])
-scan_type_opts = ["B-scan", "C-scan", "OCTA", "other"]
-scan_type = c1.selectbox(
-    "Scan", scan_type_opts,
-    index=scan_type_opts.index(saved.get("scan_type", "B-scan"))
-    if saved.get("scan_type") in scan_type_opts else 0,
-    key=f"{K}st",
-)
-scan_loc_opts = ["macula", "optic disc", "periphery", "other"]
-scan_loc = c2.selectbox(
-    "Location", scan_loc_opts,
-    index=scan_loc_opts.index(saved.get("scan_loc", "macula"))
-    if saved.get("scan_loc") in scan_loc_opts else 0,
-    key=f"{K}sl",
-)
-saved_quality = saved.get("quality", "good")
-quality_opts = ["good", "fair", "poor"]
-quality = st.radio(
-    "**Quality**", quality_opts,
-    index=quality_opts.index(saved_quality) if saved_quality in quality_opts else 0,
-    horizontal=True, key=f"{K}qual",
-)
-
-st.markdown("---")
-
-# ── L1: Findings ──
-
-saved_loc_findings = saved.get("L1_loc_findings", saved.get("L2_loc_findings", {}))
-loc_findings = {}
-
+# 入力はフォームにまとめる：チェックや選択を触っても再実行（Running）せず、
+# 送信ボタン（Auto Generate / Save / Save & Next）を押したときだけまとめて処理する。
+# 矛盾の解消・L2/L3の自動補正は、送信時に reconcile_annotation() で行う。
+annot_form = st.form(key=f"{K}form", clear_on_submit=False)
 def render_category(label, categories, prefix, saved_data):
     st.markdown(f"### {label}")
     data = {}
@@ -689,8 +670,9 @@ def render_category(label, categories, prefix, saved_data):
         data[cat_name] = checked
     return data
 
-# 部位を区別しない統合入力。過去データ（fovea/extrafovea 別）はカテゴリ単位で
-# マージして表示し、保存は UNIFIED_LOC_KEY の1セットにまとめる（既存の列構造は維持）。
+
+saved_loc_findings = saved.get("L1_loc_findings", saved.get("L2_loc_findings", {}))
+# 過去データ（fovea/extrafovea 別）はカテゴリ単位でマージして統合表示。
 saved_unified = {}
 for _loc_key, _loc_data in saved_loc_findings.items():
     if not isinstance(_loc_data, dict):
@@ -701,120 +683,135 @@ for _loc_key, _loc_data in saved_loc_findings.items():
             if _f not in merged:
                 merged.append(_f)
 
-st.markdown('<div class="fovea-block">', unsafe_allow_html=True)
-loc_findings[UNIFIED_LOC_KEY] = render_category("Findings", FINDING_CATEGORIES, "unif", saved_unified)
-st.markdown('</div>', unsafe_allow_html=True)
+l2_opts = ["abnormal", "normal", "uncertain"]
+mgmt_opts = ["no abnormality", "observation", "further exam", "treatment"]
 
-# Recalculate positives from actual rendered checkboxes (for has_findings & save)
-all_positive = set()
-for loc_data in loc_findings.values():
-    if isinstance(loc_data, dict):
-        for cat_findings in loc_data.values():
-            all_positive.update(cat_findings)
+# Auto Generate の整合結果は、ウィジェットのkeyを直接書き換えられない（Streamlit制約）ため、
+# 画像ごとの pending 値として持ち、次の描画でウィジェットの初期値に使ってから消す。
+pending_key = f"{K}pending"
+pending = st.session_state.pop(pending_key, None)  # あれば取り出して消す
 
-# Update forced_off based on current render
-forced_off_negatives = set()
-for pos_finding, neg_finding in POS_TO_NEG.items():
-    if pos_finding in all_positive:
-        forced_off_negatives.add(neg_finding)
+def _init_caption():
+    if pending and "caption" in pending:
+        return pending["caption"]
+    return saved.get("caption", "")
 
-has_findings = any(
-    f for loc_data in loc_findings.values() if isinstance(loc_data, dict)
-    for f in loc_data.values() if f
-)
+def _init_l2():
+    if pending and "l2" in pending:
+        return pending["l2"]
+    v = saved.get("L2", saved.get("L1"))
+    return v if v in l2_opts else "normal"
 
-st.markdown("---")
+def _init_mgmt():
+    if pending and "mgmt" in pending:
+        return pending["mgmt"]
+    v = saved.get("L3_mgmt", saved.get("L4_mgmt", "no abnormality"))
+    return v if v in mgmt_opts else "no abnormality"
 
-# Negative findings (1 row)
-neg_cols = st.columns([1.2] + [1] * len(NEG_FINDINGS))
-neg_cols[0].markdown("**Negative**")
-saved_neg = saved.get("L1_neg", saved.get("L2_neg", NEG_FINDINGS))
-neg_checked = []
-for i, n in enumerate(NEG_FINDINGS):
-    neg_key = f"{K}neg_{i}"
-    if n in forced_off_negatives:
-        neg_cols[i + 1].checkbox(f"~~{n}~~", value=False, disabled=True, key=f"{K}neg_disabled_{i}")
-    else:
-        if neg_cols[i + 1].checkbox(n, value=(n in saved_neg), key=neg_key):
+def _init_neg(n):
+    if pending and "neg" in pending:
+        return n in pending["neg"]
+    return n in saved.get("L1_neg", saved.get("L2_neg", NEG_FINDINGS))
+
+# ── 入力フォーム（送信するまで再実行しない） ──
+loc_findings = {}
+with annot_form:
+    c1, c2 = st.columns([1, 1])
+    scan_type_opts = ["B-scan", "C-scan", "OCTA", "other"]
+    scan_type = c1.selectbox(
+        "Scan", scan_type_opts,
+        index=scan_type_opts.index(saved.get("scan_type", "B-scan"))
+        if saved.get("scan_type") in scan_type_opts else 0,
+        key=f"{K}st",
+    )
+    scan_loc_opts = ["macula", "optic disc", "periphery", "other"]
+    scan_loc = c2.selectbox(
+        "Location", scan_loc_opts,
+        index=scan_loc_opts.index(saved.get("scan_loc", "macula"))
+        if saved.get("scan_loc") in scan_loc_opts else 0,
+        key=f"{K}sl",
+    )
+    saved_quality = saved.get("quality", "good")
+    quality_opts = ["good", "fair", "poor"]
+    quality = st.radio(
+        "**Quality**", quality_opts,
+        index=quality_opts.index(saved_quality) if saved_quality in quality_opts else 0,
+        horizontal=True, key=f"{K}qual",
+    )
+
+    st.markdown("---")
+
+    # ── L1: Findings（部位なし統合） ──
+    st.markdown('<div class="fovea-block">', unsafe_allow_html=True)
+    loc_findings[UNIFIED_LOC_KEY] = render_category("Findings", FINDING_CATEGORIES, "unif", saved_unified)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Negative findings（フォーム内では常に表示。矛盾は送信時に自動解消）
+    # key を付けない：Auto Generate の整合結果を value= で反映するため。
+    neg_cols = st.columns([1.2] + [1] * len(NEG_FINDINGS))
+    neg_cols[0].markdown("**Negative**")
+    neg_checked = []
+    for i, n in enumerate(NEG_FINDINGS):
+        if neg_cols[i + 1].checkbox(n, value=_init_neg(n)):
             neg_checked.append(n)
 
-st.markdown("---")
+    st.markdown("---")
 
-st.markdown("**L2. Abnormality**")
-l2_opts = ["abnormal", "normal", "uncertain"]
-l2_key = f"{K}l2"
-# Auto-switch L2 based on findings
-if has_findings and st.session_state.get(l2_key) == "normal":
-    st.session_state[l2_key] = "abnormal"
-elif not has_findings and st.session_state.get(l2_key) == "abnormal":
-    st.session_state[l2_key] = "normal"
-l2_saved = saved.get("L2", saved.get("L1"))
-if l2_saved and l2_saved in l2_opts:
-    l2_default = l2_saved
-elif has_findings:
-    l2_default = "abnormal"
-else:
-    l2_default = "normal"
-l2 = st.radio("l2", l2_opts, index=l2_opts.index(l2_default), horizontal=True, key=l2_key, label_visibility="collapsed")
+    st.markdown("**L2. Abnormality**")
+    l2 = st.radio("l2", l2_opts, index=l2_opts.index(_init_l2()),
+                  horizontal=True, label_visibility="collapsed")
 
-st.markdown("**L3. Management**")
-mgmt_opts = ["no abnormality", "observation", "further exam", "treatment"]
-mgmt_key = f"{K}mgmt"
-# Auto-switch L3 based on findings
-if has_findings and st.session_state.get(mgmt_key) == "no abnormality":
-    st.session_state[mgmt_key] = "observation"
-elif not has_findings and st.session_state.get(mgmt_key) in ("observation", "further exam", "treatment"):
-    st.session_state[mgmt_key] = "no abnormality"
-saved_mgmt = saved.get("L3_mgmt", saved.get("L4_mgmt", "no abnormality"))
-mgmt = st.radio(
-    "l3", mgmt_opts,
-    index=mgmt_opts.index(saved_mgmt) if saved_mgmt in mgmt_opts else 0,
-    horizontal=True, key=mgmt_key, label_visibility="collapsed",
-)
+    st.markdown("**L3. Management**")
+    mgmt = st.radio("l3", mgmt_opts, index=mgmt_opts.index(_init_mgmt()),
+                    horizontal=True, label_visibility="collapsed")
 
-st.markdown("---")
+    st.markdown("---")
+    st.markdown("**Caption**")
+    caption = st.text_area("Caption", value=_init_caption(),
+                           height=300, label_visibility="collapsed")
 
-# Auto-generate caption from current form state
-def _build_preview_data():
-    return {
-        "quality": quality, "L2": l2,
-        "L1_loc_findings": loc_findings,
-        "L1_neg": neg_checked,
-        "L3_mgmt": mgmt,
-    }
+    # 送信ボタン（これを押したときだけ処理が走る）
+    b1, b2, b3 = st.columns(3)
+    do_generate = b1.form_submit_button("Auto Generate", use_container_width=True)
+    do_save = b2.form_submit_button("Save", type="primary", use_container_width=True)
+    do_next = b3.form_submit_button("Save & Next ▶", use_container_width=True)
 
-col_cap_label, col_cap_btn = st.columns([3, 1])
-col_cap_label.markdown("**Caption**")
-if col_cap_btn.button("Auto Generate", key=f"{K}auto_cap"):
-    st.session_state[f"{K}cap"] = generate_caption(_build_preview_data())
-    st.rerun()
-
-caption = st.text_area("Caption", value=saved.get("caption", ""), height=300, key=f"{K}cap")
-
-# ── Save ──
-def build_data():
+# ── 送信後の処理（フォームの外）：整合を取ってから生成／保存 ──
+def build_data(neg, l2v, mgmtv, cap):
     return {
         "scan_type": scan_type, "scan_loc": scan_loc, "quality": quality,
         "L1_loc_findings": loc_findings,
-        "L2": l2,
-        "L1_neg": neg_checked,
-        "L3_mgmt": mgmt,
-        "caption": caption,
+        "L2": l2v,
+        "L1_neg": neg,
+        "L3_mgmt": mgmtv,
+        "caption": cap,
     }
 
-c_save, c_next = st.columns(2)
-if c_save.button("Save", type="primary", use_container_width=True):
-    with st.spinner("Saving to Google Sheets..."):
-        save_annotation(build_data(), current, annotator)
-        st.session_state[done_key].add(current)
-    st.success("Saved")
+if do_generate:
+    # 陽性↔陰性の矛盾解消・L2/L3補正をしてからキャプション生成
+    neg2, l2b, mgmt2, _ = reconcile_annotation(loc_findings, neg_checked, l2, mgmt)
+    new_cap = generate_caption({
+        "quality": quality, "L2": l2b,
+        "L1_loc_findings": loc_findings, "L1_neg": neg2, "L3_mgmt": mgmt2,
+    })
+    # 整えた値は pending に保存し、次の描画でウィジェットの初期値として反映する。
+    # （ウィジェットkeyを生成後に書き換えるとStreamlitがエラーになるため）
+    st.session_state[pending_key] = {
+        "caption": new_cap, "l2": l2b, "mgmt": mgmt2, "neg": neg2,
+    }
     st.rerun()
 
-if c_next.button("Save & Next ▶", use_container_width=True):
+if do_save or do_next:
+    neg2, l2b, mgmt2, _ = reconcile_annotation(loc_findings, neg_checked, l2, mgmt)
     with st.spinner("Saving to Google Sheets..."):
-        save_annotation(build_data(), current, annotator)
+        save_annotation(build_data(neg2, l2b, mgmt2, caption), current, annotator)
         st.session_state[done_key].add(current)
-    st.session_state.idx = min(total - 1, idx + 1)
+    if do_next:
+        st.session_state.idx = min(total - 1, idx + 1)
+    else:
+        st.success("Saved")
     st.rerun()
 
 # Scroll to top
