@@ -5,6 +5,7 @@ Annotations: per-annotator Google Sheets (auto-created in same Drive folder)
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import json
 import io
 import base64
@@ -19,18 +20,18 @@ import gspread
 
 st.set_page_config(page_title="OCT Annotation", layout="wide")
 
-sidebar_width = st.session_state.get("sidebar_w", 500)
-
 st.markdown(f"""
 <style>
-/* Sidebar: fixed width controlled by slider */
+/* Sidebar width is driven by a CSS variable so it can be changed purely
+   client-side (JS) without triggering a Streamlit rerun. Default 500px. */
+:root {{ --sb-w: 500px; }}
 [data-testid="stSidebar"] {{
-    min-width: {sidebar_width}px !important;
-    max-width: {sidebar_width}px !important;
-    width: {sidebar_width}px !important;
+    min-width: var(--sb-w) !important;
+    max-width: var(--sb-w) !important;
+    width: var(--sb-w) !important;
 }}
 [data-testid="stSidebar"] > div:first-child {{
-    width: {sidebar_width}px !important;
+    width: var(--sb-w) !important;
 }}
 .block-container {{ padding-top: 2.5rem; padding-bottom: 0rem; }}
 h3 {{ margin-top: 0.2rem; margin-bottom: 0.1rem; font-size: 1.05rem; }}
@@ -562,7 +563,68 @@ st.sidebar.caption(f"{'40枚のみ' if image_set == '40 subset' else '全画像'
 
 # ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
 
-st.sidebar.slider("Image panel width", min_value=300, max_value=800, value=500, step=50, key="sidebar_w")
+# 画像パネル幅：Streamlitのsliderだと動かすたびに全体がrerunし、フォーム再描画で
+# 重くなる＋"Bad message format"を誘発する。そこでrerunしない純クライアント側の
+# レンジ入力（components.htmlのiframe内でJS実行）にして、親ドキュメントの
+# CSS変数 --sb-w を直接書き換える（Pythonは一切走らない）。値はlocalStorageに保存。
+with st.sidebar:
+    st.markdown("**Image panel width**")
+    components.html("""
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;font-family:sans-serif;">
+      <span>300</span>
+      <input id="sbw-range" type="range" min="300" max="800" step="10" style="flex:1;" />
+      <span>800</span>
+      <span id="sbw-val" style="min-width:38px;text-align:right;font-weight:600;"></span>
+    </div>
+    <script>
+    (function(){
+      var pdoc = window.parent.document;
+      var root = pdoc.documentElement;
+      var KEY = 'oct_sb_w';
+      var range = document.getElementById('sbw-range');
+      var valEl = document.getElementById('sbw-val');
+      var saved = parseInt(window.parent.localStorage.getItem(KEY) || '500', 10);
+      function sidebar(){ return pdoc.querySelector('[data-testid="stSidebar"]'); }
+      function apply(px){
+        var w = px + 'px';
+        root.style.setProperty('--sb-w', w);
+        // インライン !important でStreamlit側のCSSに確実に勝たせる
+        var sb = sidebar();
+        if (sb){
+          sb.style.setProperty('width', w, 'important');
+          sb.style.setProperty('min-width', w, 'important');
+          sb.style.setProperty('max-width', w, 'important');
+          var inner = sb.querySelector(':scope > div:first-child');
+          if (inner) inner.style.setProperty('width', w, 'important');
+        }
+        window.parent.localStorage.setItem(KEY, px);
+        if (valEl) valEl.textContent = px;
+      }
+      range.value = saved;
+      apply(saved);
+      range.addEventListener('input', function(){ apply(parseInt(range.value, 10)); });
+      // Streamlitがrerunでsidebarのstyle/幅を上書きしても、その変化を検知して
+      // 現在値を再適用する（MutationObserverなのでポーリング不要・軽量）。
+      // rerunでこのscriptが再実行されても、observerが重複しないよう前回分を切る。
+      var sb = sidebar();
+      if (sb && window.parent.MutationObserver){
+        if (window.parent.__octSbwObserver){ window.parent.__octSbwObserver.disconnect(); }
+        var reapplying = false;
+        var mo = new window.parent.MutationObserver(function(){
+          if (reapplying) return;              // 自分の変更で無限ループしない
+          var want = parseInt(range.value, 10) + 'px';
+          if (sb.style.width !== want){
+            reapplying = true;
+            apply(parseInt(range.value, 10));
+            reapplying = false;
+          }
+        });
+        mo.observe(sb, {attributes:true, attributeFilter:['style']});
+        window.parent.__octSbwObserver = mo;
+      }
+    })();
+    </script>
+    """, height=44)
 annotator = st.sidebar.text_input("Annotator name", value="default")
 
 if not annotator or annotator.strip() == "":
