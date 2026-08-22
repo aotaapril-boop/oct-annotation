@@ -580,16 +580,32 @@ if st.session_state.idx > total - 1:
 if st.session_state.idx < 0:
     st.session_state.idx = 0
 
+# No. ジャンプ欄は idx と同じ値を key で共有する（単一の真実）。
+# idx を動かす箇所では jump_no も一緒に更新することで、番号欄と表示がズレない。
+jump_key = "jump_no"
+if jump_key not in st.session_state:
+    st.session_state[jump_key] = st.session_state.idx + 1
+
+def _go(delta):
+    new = min(total, max(1, st.session_state[jump_key] + delta))
+    st.session_state[jump_key] = new
+    st.session_state.idx = new - 1
+
+def _jump_changed():
+    st.session_state.idx = st.session_state[jump_key] - 1
+
+# idx が他の箇所（Save & Next / Next incomplete / 一覧クリック / 範囲丸め）で
+# 変わっていたら、番号欄の表示を idx に合わせる（ウィジェット生成前なので安全）。
+if st.session_state[jump_key] != st.session_state.idx + 1:
+    st.session_state[jump_key] = st.session_state.idx + 1
+
 col_p, col_n, col_jump = st.sidebar.columns([1, 1, 2])
-if col_p.button("◀ Prev"):
-    st.session_state.idx = max(0, st.session_state.idx - 1)
-if col_n.button("Next ▶"):
-    st.session_state.idx = min(total - 1, st.session_state.idx + 1)
-jump = col_jump.number_input(
+col_p.button("◀ Prev", on_click=_go, args=(-1,))
+col_n.button("Next ▶", on_click=_go, args=(1,))
+col_jump.number_input(
     "No.", min_value=1, max_value=total,
-    value=st.session_state.idx + 1, label_visibility="collapsed",
+    key=jump_key, label_visibility="collapsed", on_change=_jump_changed,
 )
-st.session_state.idx = jump - 1
 
 # Done set — keyed by annotator, refreshed on save or annotator change
 done_key = f"done_set_{annotator}"
@@ -769,14 +785,15 @@ with annot_form:
 
     st.markdown("---")
     st.markdown("**Caption**")
+    # Auto Generate はキャプションの上に単独で置く（押すと整合＋生成してキャプションに反映）
+    do_generate = st.form_submit_button("Auto Generate", use_container_width=True)
     caption = st.text_area("Caption", value=_init_caption(),
                            height=300, label_visibility="collapsed")
 
-    # 送信ボタン（これを押したときだけ処理が走る）
-    b1, b2, b3 = st.columns(3)
-    do_generate = b1.form_submit_button("Auto Generate", use_container_width=True)
-    do_save = b2.form_submit_button("Save", type="primary", use_container_width=True)
-    do_next = b3.form_submit_button("Save & Next ▶", use_container_width=True)
+    # 保存ボタン（キャプションの下）
+    b_save, b_next = st.columns(2)
+    do_save = b_save.form_submit_button("Save", type="primary", use_container_width=True)
+    do_next = b_next.form_submit_button("Save & Next ▶", use_container_width=True)
 
 # ── 送信後の処理（フォームの外）：整合を取ってから生成／保存 ──
 def build_data(neg, l2v, mgmtv, cap):
