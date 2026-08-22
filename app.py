@@ -649,9 +649,11 @@ if jump_key not in st.session_state:
     st.session_state[jump_key] = st.session_state.idx + 1
 
 def _go(delta):
-    new = min(total, max(1, st.session_state[jump_key] + delta))
-    st.session_state[jump_key] = new
-    st.session_state.idx = new - 1
+    # idx を単一の真実にする（jump_key基準にすると、rerunを挟まない
+    # idx変更＝Next incomplete等の後にズレて、Prevで1に戻る不具合が出るため）。
+    new_idx = min(total - 1, max(0, st.session_state.idx + delta))
+    st.session_state.idx = new_idx
+    st.session_state[jump_key] = new_idx + 1
 
 def _jump_changed():
     st.session_state.idx = st.session_state[jump_key] - 1
@@ -675,11 +677,16 @@ if done_key not in st.session_state:
     with st.spinner("Loading progress..."):
         st.session_state[done_key] = get_done_set(annotator)
 
-if st.sidebar.button("⏭ Next incomplete"):
+def _next_incomplete():
+    # コールバック内（ウィジェット生成前）でidxを更新する。
+    # 番号欄との同期は次の描画の同期ブロックが行う（ここでjump_keyは触らない：
+    # number_input生成後にkeyを書き換えるとStreamlitがエラーになるため）。
     for i in range(total):
         if images[i] not in st.session_state[done_key]:
             st.session_state.idx = i
             break
+
+st.sidebar.button("⏭ Next incomplete", on_click=_next_incomplete)
 
 idx = st.session_state.idx
 current = images[idx]
@@ -764,32 +771,43 @@ for _loc_key, _loc_data in saved_loc_findings.items():
 l2_opts = ["abnormal", "normal", "uncertain"]
 mgmt_opts = ["no abnormality", "observation", "further exam", "treatment"]
 
-# Auto Generate の整合結果は、ウィジェットのkeyを直接書き換えられない（Streamlit制約）ため、
-# 画像ごとの pending 値として持ち、次の描画でウィジェットの初期値に使ってから消す。
+# caption / L2 / L3 / negative は key付きウィジェットにして状態を保持する。
+# key無しだと、Auto Generate後にSaveすると submit時に value= が古い保存値へ戻り、
+# 生成したキャプションが保存されない不具合が出るため。
+# ウィジェット生成前（ここ）に session_state を仕込むのは Streamlit で許可される。
+cap_key   = f"{K}cap"
+l2_key    = f"{K}l2"
+mgmt_key  = f"{K}mgmt"
+def _neg_key(i): return f"{K}neg_{i}"
+
+# デフォルト値（保存済みデータ由来）
+_saved_cap  = saved.get("caption", "")
+_saved_l2v  = saved.get("L2", saved.get("L1"))
+_saved_l2   = _saved_l2v if _saved_l2v in l2_opts else "normal"
+_saved_mgmtv = saved.get("L3_mgmt", saved.get("L4_mgmt", "no abnormality"))
+_saved_mgmt = _saved_mgmtv if _saved_mgmtv in mgmt_opts else "no abnormality"
+_saved_neg  = saved.get("L1_neg", saved.get("L2_neg", NEG_FINDINGS))
+
+# Auto Generate の整合結果（pending）があれば最優先で反映。
 pending_key = f"{K}pending"
-pending = st.session_state.pop(pending_key, None)  # あれば取り出して消す
+pending = st.session_state.pop(pending_key, None)
+if pending:
+    st.session_state[cap_key]  = pending.get("caption", _saved_cap)
+    st.session_state[l2_key]   = pending.get("l2", _saved_l2)
+    st.session_state[mgmt_key] = pending.get("mgmt", _saved_mgmt)
+    _pneg = pending.get("neg", _saved_neg)
+    for i, n in enumerate(NEG_FINDINGS):
+        st.session_state[_neg_key(i)] = (n in _pneg)
 
-def _init_caption():
-    if pending and "caption" in pending:
-        return pending["caption"]
-    return saved.get("caption", "")
-
-def _init_l2():
-    if pending and "l2" in pending:
-        return pending["l2"]
-    v = saved.get("L2", saved.get("L1"))
-    return v if v in l2_opts else "normal"
-
-def _init_mgmt():
-    if pending and "mgmt" in pending:
-        return pending["mgmt"]
-    v = saved.get("L3_mgmt", saved.get("L4_mgmt", "no abnormality"))
-    return v if v in mgmt_opts else "no abnormality"
-
-def _init_neg(n):
-    if pending and "neg" in pending:
-        return n in pending["neg"]
-    return n in saved.get("L1_neg", saved.get("L2_neg", NEG_FINDINGS))
+# widget stateが無いときは保存値で初期化する。
+# Streamlitは「前の描画で表示されなかったkey付きwidgetのstate」を破棄するため、
+# 別画像へ移動して戻るとcap_key等が消える。その場合ここで保存値から復元する。
+# 既に存在する（＝同じ画像で編集中）ときは setdefault が何もしないので入力は保持。
+st.session_state.setdefault(cap_key, _saved_cap)
+st.session_state.setdefault(l2_key, _saved_l2)
+st.session_state.setdefault(mgmt_key, _saved_mgmt)
+for i, n in enumerate(NEG_FINDINGS):
+    st.session_state.setdefault(_neg_key(i), (n in _saved_neg))
 
 # ── 入力フォーム（送信するまで再実行しない） ──
 loc_findings = {}
@@ -832,24 +850,24 @@ with annot_form:
     neg_cols[0].markdown("**Negative**")
     neg_checked = []
     for i, n in enumerate(NEG_FINDINGS):
-        if neg_cols[i + 1].checkbox(n, value=_init_neg(n)):
+        if neg_cols[i + 1].checkbox(n, key=_neg_key(i)):
             neg_checked.append(n)
 
     st.markdown("---")
 
     st.markdown("**L2. Abnormality**")
-    l2 = st.radio("l2", l2_opts, index=l2_opts.index(_init_l2()),
+    l2 = st.radio("l2", l2_opts, key=l2_key,
                   horizontal=True, label_visibility="collapsed")
 
     st.markdown("**L3. Management**")
-    mgmt = st.radio("l3", mgmt_opts, index=mgmt_opts.index(_init_mgmt()),
+    mgmt = st.radio("l3", mgmt_opts, key=mgmt_key,
                     horizontal=True, label_visibility="collapsed")
 
     st.markdown("---")
     st.markdown("**Caption**")
     # Auto Generate はキャプションの上に単独で置く（押すと整合＋生成してキャプションに反映）
     do_generate = st.form_submit_button("Auto Generate", use_container_width=True)
-    caption = st.text_area("Caption", value=_init_caption(),
+    caption = st.text_area("Caption", key=cap_key,
                            height=300, label_visibility="collapsed")
 
     # 保存ボタン（キャプションの下）
@@ -889,6 +907,8 @@ if do_save or do_next:
         st.session_state[done_key].add(current)
     if do_next:
         st.session_state.idx = min(total - 1, idx + 1)
+        # jump_key はここでは触らない（widget生成後のため）。
+        # st.rerun() 後の同期ブロックが番号欄を idx に合わせる。
     else:
         st.success("Saved")
     st.rerun()
