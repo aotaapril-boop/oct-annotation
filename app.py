@@ -833,3 +833,8 @@ if do_save or do_next:
 
 # Scroll to top
 st.html("<script>window.parent.document.querySelector('section.main').scrollTo(0,0);</script>")
+
+# ページ描画が終わった後に次の画像を先読み（キャッシュ）しておく。
+# ここで実行しても現在の画面は既に表示済みなので、体感の待ち時間は増えない。
+# 次に Save & Next / Next を押したときにキャッシュ命中で速くなる。
+preload_nearby_images(idx, images_info, count=2)
