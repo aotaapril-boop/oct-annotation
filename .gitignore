@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 
 app_backup_*.py
+caption_backup_*.json
