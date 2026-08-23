@@ -386,26 +386,57 @@ def _full(name):
     return FULLSPELL.get(name, name)
 
 
+# 解剖学的な層（キャプションでの記述順）。カテゴリ名→層への対応。
+LAYER_ORDER = ["VRI", "intraretinal", "outer_retina", "choroid"]
+LAYER_PREFIX = {
+    "VRI":          "At the vitreoretinal interface",
+    "intraretinal": "In the inner retina",
+    "outer_retina": "In the outer retina",
+    "choroid":      "In the choroid",
+}
+
+def _category_to_layer(cat_name):
+    """UIのカテゴリ名（VRI / Intraretinal-1 / Outer retina-2 / Choroid など）を層に対応づける。"""
+    base = cat_name.replace("-1", "").replace("-2", "")
+    if "VRI" in base:
+        return "VRI"
+    if "Intraretinal" in base:
+        return "intraretinal"
+    if "Outer" in base:
+        return "outer_retina"
+    if "Choroid" in base:
+        return "choroid"
+    return None
+
+def _collect_findings_by_layer(data):
+    """所見を層ごとに集約（層内・全体とも重複除去、順序維持）。戻り値: {layer: [findings...]}"""
+    loc_findings = data.get("L1_loc_findings", {})
+    by_layer = {k: [] for k in LAYER_ORDER}
+    seen_global = set()  # 同じ所見が複数カテゴリに入っていても1回だけ
+    for loc_data in loc_findings.values():
+        if not isinstance(loc_data, dict):
+            continue
+        for cat_name, findings_list in loc_data.items():
+            layer = _category_to_layer(cat_name)
+            if layer is None:
+                continue
+            for f in (findings_list or []):
+                if f and f != "other" and f not in seen_global:
+                    seen_global.add(f)
+                    by_layer[layer].append(f)
+    return by_layer
+
+
 def generate_caption(data):
-    """Deterministic English caption. 部位は区別しない。
+    """Deterministic English caption. 解剖学的な層（硝子体網膜界面/内層/外層/脈絡膜）ごとに所見を記述。
     - 所見があれば normal でも abnormal 扱い
     - poor + 所見 → 慎重解釈を促す1文
     - 所見はフルスペル(略語)で記述
     """
     sentences = []
 
-    # ---- 全所見を部位区別なしで集約（順序は定義順を維持） ----
-    loc_findings = data.get("L1_loc_findings", {})
-    findings_all = []  # フラットな所見リスト（重複除去・順序維持）
-    seen = set()
-    for loc_data in loc_findings.values():
-        if not isinstance(loc_data, dict):
-            continue
-        for findings_list in loc_data.values():
-            for f in (findings_list or []):
-                if f and f != "other" and f not in seen:
-                    seen.add(f)
-                    findings_all.append(f)
+    by_layer = _collect_findings_by_layer(data)
+    findings_all = [f for layer in LAYER_ORDER for f in by_layer[layer]]
     has_findings = len(findings_all) > 0
 
     quality = (data.get("quality") or "").strip().lower()
@@ -432,12 +463,16 @@ def generate_caption(data):
     elif abnormality == "uncertain":
         sentences.append("The presence of abnormality is uncertain.")
 
-    # 3. Findings（部位なし・フルスペル・1文にまとめる）
+    # 3. Findings（層ごとに1文ずつ・フルスペル）
     if has_findings:
-        expanded = [_full(f) for f in findings_all]
-        findings_text = _join_english_list(expanded)
-        verb = "is" if len(expanded) == 1 else "are"
-        sentences.append(f"{findings_text[0].upper() + findings_text[1:]} {verb} observed.")
+        for layer in LAYER_ORDER:
+            items = by_layer[layer]
+            if not items:
+                continue
+            expanded = [_full(f) for f in items]
+            findings_text = _join_english_list(expanded)
+            verb = "is" if len(expanded) == 1 else "are"
+            sentences.append(f"{LAYER_PREFIX[layer]}, {findings_text} {verb} observed.")
 
     # 4. Negative findings（フルスペル）
     neg_list = data.get("L1_neg", [])
