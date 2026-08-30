@@ -575,14 +575,16 @@ if not images_info:
     st.error("No images found in Google Drive folder. Check folder ID and permissions.")
     st.stop()
 
-# 画像セットの切替（40枚のみ / 全画像）。デフォルトは40枚。
+# 画像セットの切替。デフォルトは40枚。
+# - 40 subset : キャプション比較で使った40枚のみ
+# - All except 40 : 全画像から上記40枚を除いた残り
+# - All images : Driveの全画像
 image_set = st.sidebar.radio(
     "Image set",
-    ["40 subset", "All images"],
+    ["40 subset", "All except 40", "All images"],
     index=0,
-    horizontal=True,
     key="image_set",
-    help="40 subset = キャプション比較で使った40枚のみ。All = Driveの全画像。",
+    help="40 subset=対象40枚のみ／All except 40=全画像から40枚を除いた残り／All images=Drive全画像。",
 )
 if image_set == "40 subset":
     filtered = [(n, i) for (n, i) in images_info if n in SUBSET_40]
@@ -590,11 +592,18 @@ if image_set == "40 subset":
         images_info = filtered
     else:
         st.sidebar.warning("40枚のうちDriveに見つかった画像がありません。全画像を表示します。")
+elif image_set == "All except 40":
+    filtered = [(n, i) for (n, i) in images_info if n not in SUBSET_40]
+    if filtered:
+        images_info = filtered
+    else:
+        st.sidebar.warning("40枚を除いた残りの画像がありません。全画像を表示します。")
 
 images = [name for name, _ in images_info]
 image_ids = {name: fid for name, fid in images_info}
 total = len(images)
-st.sidebar.caption(f"{'40枚のみ' if image_set == '40 subset' else '全画像'}: {total} 枚")
+_set_label = {"40 subset": "40枚のみ", "All except 40": "40枚を除く残り", "All images": "全画像"}[image_set]
+st.sidebar.caption(f"{_set_label}: {total} 枚")
 
 # ─── Sidebar: image + navigation (fixed, doesn't scroll with main) ───
 
@@ -844,24 +853,14 @@ st.session_state.setdefault(mgmt_key, _saved_mgmt)
 for i, n in enumerate(NEG_FINDINGS):
     st.session_state.setdefault(_neg_key(i), (n in _saved_neg))
 
+# スキャン情報（B-scan / Location）の選択UIは廃止。
+# ただし保存スキーマ・過去データ互換のため、変数は保存値（無ければ空）で保持する。
+scan_type = saved.get("scan_type", "")
+scan_loc = saved.get("scan_loc", "")
+
 # ── 入力フォーム（送信するまで再実行しない） ──
 loc_findings = {}
 with annot_form:
-    c1, c2 = st.columns([1, 1])
-    scan_type_opts = ["B-scan", "C-scan", "OCTA", "other"]
-    scan_type = c1.selectbox(
-        "Scan", scan_type_opts,
-        index=scan_type_opts.index(saved.get("scan_type", "B-scan"))
-        if saved.get("scan_type") in scan_type_opts else 0,
-        key=f"{K}st",
-    )
-    scan_loc_opts = ["macula", "optic disc", "periphery", "other"]
-    scan_loc = c2.selectbox(
-        "Location", scan_loc_opts,
-        index=scan_loc_opts.index(saved.get("scan_loc", "macula"))
-        if saved.get("scan_loc") in scan_loc_opts else 0,
-        key=f"{K}sl",
-    )
     saved_quality = saved.get("quality", "good")
     quality_opts = ["good", "fair", "poor"]
     quality = st.radio(
