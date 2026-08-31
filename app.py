@@ -736,18 +736,6 @@ idx = st.session_state.idx
 current = images[idx]
 K = f"{current}__{annotator}__"
 
-# ─── メモリリーク対策：他画像のウィジェット状態キーを掃除 ───
-# caption/L2/L3/negative は key付きウィジェット＋setdefault/代入で session_state に
-# 仕込むため、画像を切り替えても自動 purge されず溜まり続ける（1画像=十数キー）。
-# 数百枚見るとメモリを押し上げて Streamlit Cloud がクラッシュするので、
-# 「今表示している画像(K)以外の、この annotator の画像固有キー」を毎回削除する。
-# 判定：キーに "__{annotator}__" を含むが、現在の K で始まらないもの＝別画像のキー。
-# _ws_cache_ / _ann_cache_ / idx / jump_no などのシステムキーは接頭辞が違うので消えない。
-_ann_suffix = f"__{annotator}__"
-for _stale in [k for k in list(st.session_state.keys())
-               if _ann_suffix in k and not k.startswith(K)]:
-    del st.session_state[_stale]
-
 done_count = len(st.session_state[done_key])
 status = "✅" if current in st.session_state[done_key] else "⬜"
 st.sidebar.markdown(f"{status} **{idx+1}/{total}** `{current}` (done: {done_count})")
