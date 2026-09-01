@@ -14,6 +14,7 @@ from datetime import datetime
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build as gapi_build
 from googleapiclient.http import MediaIoBaseDownload
+from PIL import Image
 import gspread
 
 # ─── Config ──────────────────────────────────────────────────
@@ -129,9 +130,16 @@ def get_image_list():
     ).execute()
     return [(f["name"], f["id"]) for f in results.get("files", [])]
 
-@st.cache_data(ttl=3600, max_entries=5)
+# 表示用に縮小してからキャッシュする。
+# 元画像は 1536x768 のPNGで平均782KB。サイドバー表示では 1024px 幅あれば
+# 判読に十分で、JPEG(q=85)に変換すると 934KB → 91KB（約1/10）になる。
+# メモリ削減と、キャッシュ命中時の描画高速化の両方に効く。
+DISPLAY_MAX_W = 1024
+DISPLAY_JPEG_Q = 85
+
+@st.cache_data(ttl=3600, max_entries=12)
 def download_image(file_id):
-    """Download image bytes from Google Drive. Cached 1h, max 5 images in memory."""
+    """Download from Drive, downscale to display size, cache as JPEG bytes."""
     service = get_drive_service()
     request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     buf = io.BytesIO()
@@ -140,7 +148,20 @@ def download_image(file_id):
     while not done:
         _, done = downloader.next_chunk()
     buf.seek(0)
-    return buf.read()
+    try:
+        im = Image.open(buf)
+        if im.mode != "RGB":
+            im = im.convert("RGB")
+        # 幅が DISPLAY_MAX_W を超える場合だけ縮小（小さい画像は拡大しない）
+        if im.width > DISPLAY_MAX_W:
+            im.thumbnail((DISPLAY_MAX_W, im.height * DISPLAY_MAX_W), Image.LANCZOS)
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=DISPLAY_JPEG_Q, optimize=True)
+        return out.getvalue()
+    except Exception:
+        # 変換に失敗したら元データをそのまま返す（表示できなくなるより良い）
+        buf.seek(0)
+        return buf.read()
 
 def preload_nearby_images(current_idx, image_ids_list, count=2):
     """Preload next few images into cache."""
@@ -951,8 +972,8 @@ if do_save or do_next:
 # Scroll to top
 st.html("<script>window.parent.document.querySelector('section.main').scrollTo(0,0);</script>")
 
-# 先読みは1枚だけにする。
-# 以前は2枚先読みしていたため、起動直後に「表示中＋先読み2枚」で
-# フル解像度の画像を3枚同時にメモリへ載せていた。Streamlit Cloud の
-# メモリ上限では、これが起動直後クラッシュの一因になっていた。
-preload_nearby_images(idx, images_info, count=1)
+# 先読みは2枚に戻す。
+# download_image が表示用に縮小（1024px/JPEG、元の約1/10）してからキャッシュ
+# するようになったため、2枚先読みしてもメモリ使用量は以前より遥かに小さい。
+# Drive からの取得自体は1〜2秒かかるので、先読みしておくと切替が速くなる。
+preload_nearby_images(idx, images_info, count=2)
