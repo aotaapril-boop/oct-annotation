@@ -129,9 +129,9 @@ def get_image_list():
     ).execute()
     return [(f["name"], f["id"]) for f in results.get("files", [])]
 
-@st.cache_data(ttl=3600, max_entries=20)
+@st.cache_data(ttl=3600, max_entries=5)
 def download_image(file_id):
-    """Download image bytes from Google Drive. Cached 1h, max 20 images in memory."""
+    """Download image bytes from Google Drive. Cached 1h, max 5 images in memory."""
     service = get_drive_service()
     request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
     buf = io.BytesIO()
@@ -750,11 +750,12 @@ except Exception as e:
 # Load saved annotation (from session cache — no API call per image)
 saved = load_annotation(current, annotator)
 
-# ─── Mobile: show image in main area (hidden on desktop via CSS) ───
-img_b64 = base64.b64encode(img_bytes).decode()
+# ─── Mobile: 情報バーのみ（画像はサイドバー側の1枚を使う） ───
+# 以前はここで同じ画像を base64 でHTMLに埋め込んでいたが、1描画あたり画像を
+# 2重に保持する（base64は元データより約33%大きい）ためメモリを圧迫していた。
+# 起動直後のクラッシュ対策として埋め込みを廃止する。
 st.markdown(f"""
 <div class="mobile-oct-image" id="mobile-oct-image">
-    <img src="data:image/jpeg;base64,{img_b64}" />
     <div class="mobile-oct-info">{status} {idx+1}/{total} &mdash; {current} (done: {done_count})</div>
 </div>
 """, unsafe_allow_html=True)
@@ -950,7 +951,8 @@ if do_save or do_next:
 # Scroll to top
 st.html("<script>window.parent.document.querySelector('section.main').scrollTo(0,0);</script>")
 
-# ページ描画が終わった後に次の画像を先読み（キャッシュ）しておく。
-# ここで実行しても現在の画面は既に表示済みなので、体感の待ち時間は増えない。
-# 次に Save & Next / Next を押したときにキャッシュ命中で速くなる。
-preload_nearby_images(idx, images_info, count=2)
+# 先読みは1枚だけにする。
+# 以前は2枚先読みしていたため、起動直後に「表示中＋先読み2枚」で
+# フル解像度の画像を3枚同時にメモリへ載せていた。Streamlit Cloud の
+# メモリ上限では、これが起動直後クラッシュの一因になっていた。
+preload_nearby_images(idx, images_info, count=1)
