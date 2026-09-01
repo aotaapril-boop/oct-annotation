@@ -383,12 +383,15 @@ FULLSPELL = {
     "choroidal thickening": "choroidal thickening",
     "choroidal thinning": "choroidal thinning",
 }
+# 陰性所見は "No {名詞句} is identified." の形の文にして出力する。
+# そのため値は「否定される対象の名詞句」を持つ（先頭の "no" は付けない）。
+# EZ は「intact（正常）」ではなく「disruption（異常）」を否定する形にする。
 NEG_FULLSPELL = {
-    "no SRF": "no subretinal fluid (SRF)",
-    "no IRF": "no intraretinal fluid (IRF)",
-    "no PED": "no pigment epithelial detachment (PED)",
-    "EZ intact": "intact ellipsoid zone (EZ)",
-    "no ERM": "no epiretinal membrane (ERM)",
+    "no SRF":    "subretinal fluid (SRF)",
+    "no IRF":    "intraretinal fluid (IRF)",
+    "no PED":    "pigment epithelial detachment (PED)",
+    "EZ intact": "ellipsoid zone (EZ) disruption",
+    "no ERM":    "epiretinal membrane (ERM)",
 }
 
 
@@ -400,6 +403,17 @@ def _join_english_list(items):
     if len(items) == 2:
         return f"{items[0]} and {items[1]}"
     return ", ".join(items[:-1]) + ", and " + items[-1]
+
+
+def _join_negative_list(items):
+    """否定文用の連結。"No A or B is identified." の形にするため or でつなぐ。"""
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} or {items[1]}"
+    return ", ".join(items[:-1]) + ", or " + items[-1]
 
 
 def _full(name):
@@ -473,16 +487,19 @@ def generate_caption(data):
         else:
             sentences.append("The image is not adequate for full evaluation.")
 
-    # 2. Abnormality presence（所見があれば abnormal 扱い）
+    # 2. Abnormality presence
+    # 所見がある場合は "Abnormal findings are present." を出さない
+    # （所見そのものを列挙するので冗長なため）。
+    # 所見が無いときだけ、normal / uncertain に応じて1文を出す。
+    # L2 の選択・保存・自動補正（reconcile_annotation）は従来どおり動く。
     abnormality = (data.get("L2") or "").strip().lower()
-    if has_findings:
-        sentences.append("Abnormal findings are present.")
-    elif abnormality == "normal":
-        sentences.append("No abnormal findings are present.")
-    elif abnormality == "abnormal":
-        sentences.append("Abnormal findings are present.")
-    elif abnormality == "uncertain":
-        sentences.append("The presence of abnormality is uncertain.")
+    if not has_findings:
+        if abnormality == "normal":
+            sentences.append("No definite OCT abnormality is identified.")
+        elif abnormality == "uncertain":
+            sentences.append(
+                "No definite OCT abnormality can be determined from this image."
+            )
 
     # 3. Findings（層ごとに1文ずつ・フルスペル）
     if has_findings:
@@ -495,20 +512,17 @@ def generate_caption(data):
             verb = "is" if len(expanded) == 1 else "are"
             sentences.append(f"{LAYER_PREFIX[layer]}, {findings_text} {verb} observed.")
 
-    # 4. Negative findings（フルスペル）
+    # 4. Negative findings
+    # "Negative findings: ..." というラベル形式をやめ、通常の英文で出力する。
+    # 例：No intraretinal fluid (IRF) or subretinal fluid (SRF) is identified.
     neg_list = data.get("L1_neg", [])
     valid_neg = [NEG_FULLSPELL.get(n, n) for n in neg_list if n and n.strip()]
     if valid_neg:
-        sentences.append(f"Negative findings: {_join_english_list(valid_neg)}.")
+        sentences.append(f"No {_join_negative_list(valid_neg)} is identified.")
 
     # 5. Management
-    mgmt = (data.get("L3_mgmt") or "").strip().lower()
-    if mgmt == "observation":
-        sentences.append("Observation is recommended.")
-    elif mgmt == "further exam":
-        sentences.append("Further examination is recommended.")
-    elif mgmt == "treatment":
-        sentences.append("Treatment is recommended.")
+    # 方針の文（Observation is recommended. など）はキャプションに含めない。
+    # L3 の選択・保存・自動補正は従来どおり残す（UIも変更しない）。
 
     return " ".join(sentences)
 
