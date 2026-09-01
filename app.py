@@ -464,9 +464,9 @@ def _collect_findings_by_layer(data):
 
 def generate_caption(data):
     """Deterministic English caption. 解剖学的な層（硝子体網膜界面/内層/外層/脈絡膜）ごとに所見を記述。
-    - 所見があれば normal でも abnormal 扱い
-    - poor + 所見 → 慎重解釈を促す1文
     - 所見はフルスペル(略語)で記述
+    - 陰性所見は "No A or B is identified." の散文で記述
+    - quality / L2 / L3 の文は出力しない（選択・保存・自動補正はUI側で従来どおり）
     """
     sentences = []
 
@@ -474,18 +474,9 @@ def generate_caption(data):
     findings_all = [f for layer in LAYER_ORDER for f in by_layer[layer]]
     has_findings = len(findings_all) > 0
 
-    quality = (data.get("quality") or "").strip().lower()
-
     # 1. Image quality
-    if quality == "good":
-        sentences.append("Image quality is sufficient for evaluation.")
-    elif quality == "fair":
-        sentences.append("Image quality is limited but adequate for evaluation.")
-    elif quality == "poor":
-        if has_findings:
-            sentences.append("Image quality is poor; findings should be interpreted with caution.")
-        else:
-            sentences.append("The image is not adequate for full evaluation.")
+    # 画質の文（Image quality is ... など）はキャプションに含めない。
+    # Quality の選択・保存・自動補正は従来どおり残す（UIも変更しない）。
 
     # 2. Abnormality presence
     # 所見がある場合は "Abnormal findings are present." を出さない

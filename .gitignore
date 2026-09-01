@@ -4,3 +4,4 @@ __pycache__/
 
 app_backup_*.py
 caption_backup_*.json
+GT_backup_*.json
