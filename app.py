@@ -672,7 +672,10 @@ with st.sidebar:
       var valEl = document.getElementById('sbw-val');
       var saved = parseInt(window.parent.localStorage.getItem(KEY) || '500', 10);
       function sidebar(){ return pdoc.querySelector('[data-testid="stSidebar"]'); }
-      function apply(px){
+
+      // 幅の適用のみを行う（localStorageへの保存は呼び出し側で制御する）。
+      // observer から呼ばれる経路でも安全なよう、副作用を最小にしておく。
+      function applyWidth(px){
         var w = px + 'px';
         root.style.setProperty('--sb-w', w);
         // インライン !important でStreamlit側のCSSに確実に勝たせる
@@ -684,27 +687,43 @@ with st.sidebar:
           var inner = sb.querySelector(':scope > div:first-child');
           if (inner) inner.style.setProperty('width', w, 'important');
         }
-        window.parent.localStorage.setItem(KEY, px);
         if (valEl) valEl.textContent = px;
+      }
+      // ユーザー操作時のみ localStorage に保存する。
+      // observer 経由の再適用で毎回保存すると同期I/Oが高頻度で走るため分離した。
+      function apply(px){
+        applyWidth(px);
+        window.parent.localStorage.setItem(KEY, px);
       }
       range.value = saved;
       apply(saved);
       range.addEventListener('input', function(){ apply(parseInt(range.value, 10)); });
       // Streamlitがrerunでsidebarのstyle/幅を上書きしても、その変化を検知して
-      // 現在値を再適用する（MutationObserverなのでポーリング不要・軽量）。
-      // rerunでこのscriptが再実行されても、observerが重複しないよう前回分を切る。
+      // 現在値を再適用する。rerunでこのscriptが再実行されても、observerが
+      // 重複しないよう前回分を切る。
+      //
+      // 【無限ループ対策】
+      // 再適用は sb.style を書き換えるので、それ自体が observer を再発火させる。
+      // 以前は真偽フラグで抑止していたが、observer のコールバックは非同期
+      // (マイクロタスク) で呼ばれるため、フラグを false に戻した後に通知が届き
+      // 抑止できずループしていた。そこで「再適用の前に observer を切り、
+      // 適用後に繋ぎ直す」方式にする。自分の変更は監視対象外の時間帯に起きるため、
+      // 原理的に自己発火しない。
+      //
+      // 判定も getComputedStyle の実効値で行う。style.width は !important 付きで
+      // 設定した値と表記が一致しないことがあり、毎回「不一致」と誤判定して
+      // 再適用を繰り返す原因になっていた。
       var sb = sidebar();
       if (sb && window.parent.MutationObserver){
         if (window.parent.__octSbwObserver){ window.parent.__octSbwObserver.disconnect(); }
-        var reapplying = false;
         var mo = new window.parent.MutationObserver(function(){
-          if (reapplying) return;              // 自分の変更で無限ループしない
-          var want = parseInt(range.value, 10) + 'px';
-          if (sb.style.width !== want){
-            reapplying = true;
-            apply(parseInt(range.value, 10));
-            reapplying = false;
-          }
+          var want = parseInt(range.value, 10);
+          var now  = parseInt(window.parent.getComputedStyle(sb).width, 10);
+          // 1px未満の差は無視（小数丸めで揺れるため）
+          if (isNaN(now) || Math.abs(now - want) < 1) return;
+          mo.disconnect();                 // 自分の変更を監視しない
+          applyWidth(want);                // localStorageは触らない
+          mo.observe(sb, {attributes:true, attributeFilter:['style']});
         });
         mo.observe(sb, {attributes:true, attributeFilter:['style']});
         window.parent.__octSbwObserver = mo;
