@@ -1,5 +1,10 @@
-streamlit>=1.35.0,<1.45.0
+streamlit>=1.50.0
 google-api-python-client>=2.100.0
 google-auth>=2.23.0
 gspread>=5.12.0,<7.0.0
 Pillow>=10.0.0
+# Streamlit Cloud は Python 3.14 環境。pyarrow 25.0.1 は Cloud 側が
+# "known segfault" と判定して毎回 24.0.0 へ差し替えており、その入れ替えが
+# 起動時のネイティブクラッシュ (malloc corrupted / プロセス強制終了) の
+# 一因になっていた。最初から 24 系を指定して差し替え自体を起こさせない。
+pyarrow>=24.0.0,<25.0.0
