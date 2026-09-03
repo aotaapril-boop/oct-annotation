@@ -618,14 +618,14 @@ if not images_info:
     st.error("No images found in Google Drive folder. Check folder ID and permissions.")
     st.stop()
 
-# 画像セットの切替。デフォルトは40枚。
+# 画像セットの切替。デフォルトは全画像。
 # - 40 subset : キャプション比較で使った40枚のみ
 # - All except 40 : 全画像から上記40枚を除いた残り
 # - All images : Driveの全画像
 image_set = st.sidebar.radio(
     "Image set",
     ["40 subset", "All except 40", "All images"],
-    index=0,
+    index=2,
     key="image_set",
     help="40 subset=対象40枚のみ／All except 40=全画像から40枚を除いた残り／All images=Drive全画像。",
 )
