@@ -464,9 +464,10 @@ def _collect_findings_by_layer(data):
 
 def generate_caption(data):
     """Deterministic English caption. 解剖学的な層（硝子体網膜界面/内層/外層/脈絡膜）ごとに所見を記述。
+    - 構成：quality → (所見なしのみ L2) → 所見 → 陰性所見 → L3
     - 所見はフルスペル(略語)で記述
     - 陰性所見は "No A or B is identified." の散文で記述
-    - quality / L2 / L3 の文は出力しない（選択・保存・自動補正はUI側で従来どおり）
+    - L2 の文は所見があるときは出さない（所見列挙と重複するため）
     """
     sentences = []
 
@@ -474,9 +475,17 @@ def generate_caption(data):
     findings_all = [f for layer in LAYER_ORDER for f in by_layer[layer]]
     has_findings = len(findings_all) > 0
 
-    # 1. Image quality
-    # 画質の文（Image quality is ... など）はキャプションに含めない。
-    # Quality の選択・保存・自動補正は従来どおり残す（UIも変更しない）。
+    # 1. Image quality（文頭。good でも毎回出力する）
+    quality = (data.get("quality") or "").strip().lower()
+    if quality == "good":
+        sentences.append("Image quality is sufficient for evaluation.")
+    elif quality == "fair":
+        sentences.append("Image quality is limited but adequate for evaluation.")
+    elif quality == "poor":
+        if has_findings:
+            sentences.append("Image quality is poor; findings should be interpreted with caution.")
+        else:
+            sentences.append("The image is not adequate for full evaluation.")
 
     # 2. Abnormality presence
     # 所見がある場合は "Abnormal findings are present." を出さない
@@ -511,9 +520,17 @@ def generate_caption(data):
     if valid_neg:
         sentences.append(f"No {_join_negative_list(valid_neg)} is identified.")
 
-    # 5. Management
-    # 方針の文（Observation is recommended. など）はキャプションに含めない。
-    # L3 の選択・保存・自動補正は従来どおり残す（UIも変更しない）。
+    # 5. Management（文末）
+    # OCT画像1枚から断定できるのは方針の候補までなので、"is recommended" のような
+    # 強い言い方は避け、推定の強さに見合う語調に揃える。
+    # 経過観察のみ、消極的選択で断定してよいため "is appropriate" とする。
+    mgmt = (data.get("L3_mgmt") or "").strip().lower()
+    if mgmt == "observation":
+        sentences.append("Observation is appropriate.")
+    elif mgmt == "further exam":
+        sentences.append("Further examination may be warranted.")
+    elif mgmt == "treatment":
+        sentences.append("Treatment may be considered.")
 
     return " ".join(sentences)
 
