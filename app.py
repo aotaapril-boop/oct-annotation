@@ -183,6 +183,12 @@ HEADER_ROW = [
     "raw_json",
 ]
 
+class SheetNotFound(Exception):
+    """指定アノテーターのシートがまだ無い。作成はボタン経由のみ。"""
+    def __init__(self, annotator):
+        self.annotator = annotator
+        super().__init__(f"sheet not found for annotator: {annotator}")
+
 def _api_call_with_retry(func, retries=3):
     """Retry API calls on transient errors."""
     for attempt in range(retries):
@@ -194,18 +200,16 @@ def _api_call_with_retry(func, retries=3):
                 continue
             raise
 
-def _get_or_create_sheet(annotator):
-    """Find or create a Google Sheet for the annotator in the sheets folder."""
-    # Cache worksheet object in session_state
-    cache_key = f"_ws_cache_{annotator}"
-    if cache_key in st.session_state:
-        return st.session_state[cache_key]
+# v2: 部位（fovea/extrafovea）統合・フルスペル化に伴い列構造を変更。
+# 旧シート（OCT_annotations_<名前>）はそのまま残り、過去データは失われない。
+SHEET_PREFIX = "OCT_annotations_v2_"
 
-    # v2: 部位（fovea/extrafovea）統合・フルスペル化に伴い列構造を変更。
-    # 旧シート（OCT_annotations_<名前>）はそのまま残り、過去データは失われない。
-    sheet_name = f"OCT_annotations_v2_{annotator}"
+def _sheet_name(annotator):
+    return f"{SHEET_PREFIX}{annotator}"
+
+def _find_sheet_files(sheet_name):
+    """同名シートを作成日時の古い順で返す。共有ドライブ対応のフラグは必須。"""
     service = get_drive_service()
-
     query = (
         f"'{DRIVE_SHEETS_FOLDER_ID}' in parents "
         f"and name='{sheet_name}' "
@@ -213,36 +217,86 @@ def _get_or_create_sheet(annotator):
         f"and trashed=false"
     )
     results = _api_call_with_retry(lambda: service.files().list(
-        q=query, fields="files(id,name)",
+        q=query, fields="files(id,name,createdTime)",
         supportsAllDrives=True, includeItemsFromAllDrives=True,
     ).execute())
-    files = results.get("files", [])
+    # 万一同名が重複しても、最古＝実データのある本物を必ず選ぶ。
+    return sorted(results.get("files", []), key=lambda f: f.get("createdTime", ""))
 
-    gc = get_gspread_client()
-
-    if files:
-        sh = _api_call_with_retry(lambda: gc.open_by_key(files[0]["id"]))
-    else:
-        file_metadata = {
-            "name": sheet_name,
-            "mimeType": "application/vnd.google-apps.spreadsheet",
-            "parents": [DRIVE_SHEETS_FOLDER_ID],
-        }
-        created = _api_call_with_retry(lambda: service.files().create(
-            body=file_metadata, fields="id",
-            supportsAllDrives=True,
+@st.cache_data(ttl=60)
+def list_annotators():
+    """シートフォルダに実在する v2 アノテーター名を返す（新しい順ではなく名前順）。"""
+    service = get_drive_service()
+    query = (
+        f"'{DRIVE_SHEETS_FOLDER_ID}' in parents "
+        f"and mimeType='application/vnd.google-apps.spreadsheet' "
+        f"and trashed=false"
+    )
+    try:
+        results = _api_call_with_retry(lambda: service.files().list(
+            q=query, fields="files(id,name)", pageSize=200,
+            supportsAllDrives=True, includeItemsFromAllDrives=True,
         ).execute())
-        sh = _api_call_with_retry(lambda: gc.open_by_key(created["id"]))
+    except Exception:
+        return []
+    names = set()
+    for f in results.get("files", []):
+        name = f.get("name", "")
+        # 旧形式（v2_ なし）は列構造が違い現行アプリでは扱えないため出さない。
+        if name.startswith(SHEET_PREFIX):
+            who = name[len(SHEET_PREFIX):].strip()
+            if who:
+                names.add(who)
+    return sorted(names)
 
-    # Use the first sheet (Sheet1)
-    ws = sh.sheet1
+def create_annotator_sheet(annotator):
+    """新規アノテーターのシートを明示的に作成する（ボタン押下時のみ呼ぶ）。
 
+    打鍵のたびに走る get_or_create ではなく、この関数だけが作成の入口。
+    直前にもう一度検索し、同時タブでの二重作成も可能な限り防ぐ。
+    """
+    sheet_name = _sheet_name(annotator)
+    existing = _find_sheet_files(sheet_name)
+    if existing:
+        return False  # 既にあるので作らない
+    service = get_drive_service()
+    file_metadata = {
+        "name": sheet_name,
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+        "parents": [DRIVE_SHEETS_FOLDER_ID],
+    }
+    created = _api_call_with_retry(lambda: service.files().create(
+        body=file_metadata, fields="id",
+        supportsAllDrives=True,
+    ).execute())
+    gc = get_gspread_client()
+    sh = _api_call_with_retry(lambda: gc.open_by_key(created["id"]))
+    _ensure_header(sh.sheet1)
+    list_annotators.clear()
+    return True
+
+def _ensure_header(ws):
     try:
         first_cell = ws.acell("A1").value
     except Exception:
         first_cell = None
     if first_cell != "image":
         ws.update("A1", [HEADER_ROW], value_input_option="RAW")
+
+def _get_sheet(annotator):
+    """既存シートを取得する。無ければ SheetNotFound を送出し、勝手に作らない。"""
+    cache_key = f"_ws_cache_{annotator}"
+    if cache_key in st.session_state:
+        return st.session_state[cache_key]
+
+    files = _find_sheet_files(_sheet_name(annotator))
+    if not files:
+        raise SheetNotFound(annotator)
+
+    gc = get_gspread_client()
+    sh = _api_call_with_retry(lambda: gc.open_by_key(files[0]["id"]))
+    ws = sh.sheet1
+    _ensure_header(ws)
 
     st.session_state[cache_key] = ws
     return ws
@@ -251,7 +305,7 @@ def _load_all_annotations(annotator):
     """Load all annotations from sheet into session_state cache."""
     cache_key = f"_ann_cache_{annotator}"
     if cache_key not in st.session_state:
-        ws = _get_or_create_sheet(annotator)
+        ws = _get_sheet(annotator)
         try:
             records = _api_call_with_retry(lambda: ws.get_all_records())
         except Exception:
@@ -279,7 +333,7 @@ def save_annotation(data, image_name, annotator):
         "annotator": annotator,
         "saved_at": datetime.now().isoformat(),
     }
-    ws = _get_or_create_sheet(annotator)
+    ws = _get_sheet(annotator)
     all_values = _api_call_with_retry(lambda: ws.get_all_values())
 
     target_row = None
@@ -731,13 +785,50 @@ with st.sidebar:
     })();
     </script>
     """, height=44)
-annotator = st.sidebar.text_input("Annotator name", value="default")
+# ─── Annotator の選択 ────────────────────────────────────────
+# 既存シートは選択式。テキスト入力のたびにシートが作られると、打鍵途中の名前
+# （例: "GT" を打つ途中の "G"/"GR"）や同時タブでの競合で空シートが増殖するため、
+# 作成は下の「Create」ボタンを押したときだけに限定する。
+existing_annotators = list_annotators()
 
-if not annotator or annotator.strip() == "":
-    st.warning("Please enter your annotator name in the sidebar.")
+if not existing_annotators:
+    st.sidebar.warning("No annotator sheets found.")
+    annotator = None
+else:
+    if "annotator_select" not in st.session_state:
+        default_idx = existing_annotators.index("default") if "default" in existing_annotators else 0
+        st.session_state["annotator_select"] = existing_annotators[default_idx]
+    # 直前に作成した名前が一覧に無い場合（キャッシュ遅延）に備えて丸める
+    if st.session_state["annotator_select"] not in existing_annotators:
+        st.session_state["annotator_select"] = existing_annotators[0]
+    annotator = st.sidebar.selectbox(
+        "Annotator", existing_annotators, key="annotator_select",
+    )
+
+with st.sidebar.expander("➕ Add new annotator"):
+    new_name = st.text_input("New annotator name", key="new_annotator_name")
+    if st.button("Create", key="create_annotator_btn"):
+        cleaned = (new_name or "").strip()
+        if not cleaned:
+            st.warning("Enter a name first.")
+        elif cleaned in existing_annotators:
+            st.info(f"'{cleaned}' already exists — select it above.")
+        else:
+            try:
+                created = create_annotator_sheet(cleaned)
+            except Exception as e:
+                st.error(f"Could not create sheet: {e}")
+            else:
+                st.session_state["annotator_select"] = cleaned
+                if created:
+                    st.success(f"Created sheet for '{cleaned}'.")
+                else:
+                    st.info(f"'{cleaned}' already existed — switched to it.")
+                st.rerun()
+
+if not annotator:
+    st.warning("Create an annotator in the sidebar to start.")
     st.stop()
-
-annotator = annotator.strip()
 
 if "idx" not in st.session_state:
     st.session_state.idx = 0
