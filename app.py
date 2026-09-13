@@ -10,6 +10,7 @@ import json
 import io
 import base64
 import time
+from collections import Counter
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build as gapi_build
@@ -448,6 +449,27 @@ NEG_FULLSPELL = {
     "no ERM":    "epiretinal membrane (ERM)",
 }
 
+# ─── Image quality ───────────────────────────────────────────
+# Excellent : 網膜表層から網膜色素上皮まで明瞭に観察でき、構造評価が可能
+# Acceptable: 一部に評価困難な領域を認めるが、全体として構造評価可能
+# Poor      : ノイズのため大部分で評価困難であり、構造評価ができない
+#
+# "fair" は「まあまあ」とも取れて曖昧なため "Acceptable"（評価に耐える）に改めた。
+# キャプション上は usable / unusable の二分で扱い、Poor のみ所見を出さず固定文にする。
+QUALITY_OPTS = ["Excellent", "Acceptable", "Poor"]
+QUALITY_UNUSABLE = {"poor"}
+CAPTION_UNUSABLE = "Image quality is insufficient for reliable OCT interpretation."
+
+# 旧ラベル → 新ラベル（既存シートの読み込み時に吸収する）
+QUALITY_MIGRATE = {"good": "Excellent", "fair": "Acceptable", "poor": "Poor"}
+
+def normalize_quality(value):
+    """保存済みの値を現行ラベルに正規化する。未知の値は Excellent に倒す。"""
+    v = (value or "").strip()
+    if v in QUALITY_OPTS:
+        return v
+    return QUALITY_MIGRATE.get(v.lower(), "Excellent")
+
 
 def _join_english_list(items):
     if not items:
@@ -518,10 +540,9 @@ def _collect_findings_by_layer(data):
 
 def generate_caption(data):
     """Deterministic English caption. 解剖学的な層（硝子体網膜界面/内層/外層/脈絡膜）ごとに所見を記述。
-    - 構成：quality → (所見なしのみ L2) → 所見 → 陰性所見 → L3
-    - 所見はフルスペル(略語)で記述
-    - 陰性所見は "No A or B is identified." の散文で記述
-    - L2 の文は所見があるときは出さない（所見列挙と重複するため）
+    - Poor（unusable）：所見を一切出さず、固定の refusal statement のみ
+    - Excellent / Acceptable（usable）：画質には言及せず、所見のみを記述
+    - 構成：(所見なしのみ L2) → 所見 → 陰性所見 → L3
     """
     sentences = []
 
@@ -529,17 +550,14 @@ def generate_caption(data):
     findings_all = [f for layer in LAYER_ORDER for f in by_layer[layer]]
     has_findings = len(findings_all) > 0
 
-    # 1. Image quality（文頭。good でも毎回出力する）
+    # 1. Image quality
+    # usable / unusable の二分で扱う。unusable（poor）の画像に無理に所見を
+    # 書かせると hallucination を助長するため、固定文だけを教師データとする。
+    # usable の場合は画質に言及しない（毎回入る定型句はモデルにとって情報量が
+    # なく、"良い画像" のキャプションに常駐するノイズになるため）。
     quality = (data.get("quality") or "").strip().lower()
-    if quality == "good":
-        sentences.append("Image quality is sufficient for evaluation.")
-    elif quality == "fair":
-        sentences.append("Image quality is limited but adequate for evaluation.")
-    elif quality == "poor":
-        if has_findings:
-            sentences.append("Image quality is poor; findings should be interpreted with caution.")
-        else:
-            sentences.append("The image is not adequate for full evaluation.")
+    if quality in QUALITY_UNUSABLE:
+        return CAPTION_UNUSABLE
 
     # 2. Abnormality presence
     # 所見がある場合は "Abnormal findings are present." を出さない
@@ -830,8 +848,49 @@ if not annotator:
     st.warning("Create an annotator in the sidebar to start.")
     st.stop()
 
+# ─── Quality での絞り込み ─────────────────────────────────────
+# Poor（unusable）と判定した画像だけを見返せるようにする。ラベル定義を
+# 変更したため、過去に poor を付けた画像の再判定に使う。
+# 保存済みアノテーションから読むので annotator 確定後に置く。
+try:
+    _anns = _load_all_annotations(annotator)
+except SheetNotFound:
+    _anns = {}
+
+_quality_of = {
+    img: normalize_quality(a.get("quality"))
+    for img, a in _anns.items()
+}
+_q_counts = Counter(_quality_of.get(n) for n in images if n in _quality_of)
+
+quality_filter = st.sidebar.selectbox(
+    "Quality filter",
+    ["All"] + QUALITY_OPTS,
+    key="quality_filter",
+    format_func=lambda q: (
+        f"All ({len(images)})" if q == "All" else f"{q} ({_q_counts.get(q, 0)})"
+    ),
+    help="保存済みの Quality で絞り込む。未保存の画像は All のときだけ表示される。",
+)
+
+if quality_filter != "All":
+    _kept = [(n, i) for (n, i) in images_info if _quality_of.get(n) == quality_filter]
+    if _kept:
+        images_info = _kept
+        images = [n for n, _ in images_info]
+        image_ids = {n: fid for n, fid in images_info}
+        total = len(images)
+        st.sidebar.caption(f"Quality = {quality_filter}: {total} 枚")
+    else:
+        st.sidebar.warning(f"Quality = {quality_filter} の画像はありません。全件を表示します。")
+
 if "idx" not in st.session_state:
     st.session_state.idx = 0
+
+# 絞り込みを変えると件数が変わるため、直前に見ていた画像を可能な限り維持する
+_prev_img = st.session_state.get("_last_image")
+if _prev_img in images:
+    st.session_state.idx = images.index(_prev_img)
 
 # 画像セット切替で件数が減ったとき、idx が範囲外にならないよう丸める
 if st.session_state.idx > total - 1:
@@ -887,6 +946,8 @@ st.sidebar.button("⏭ Next incomplete", on_click=_next_incomplete)
 
 idx = st.session_state.idx
 current = images[idx]
+# 絞り込みを切り替えたときに同じ画像へ戻れるよう、表示中の画像を覚えておく
+st.session_state["_last_image"] = current
 K = f"{current}__{annotator}__"
 
 done_count = len(st.session_state[done_key])
@@ -1015,13 +1076,21 @@ scan_loc = saved.get("scan_loc", "")
 # ── 入力フォーム（送信するまで再実行しない） ──
 loc_findings = {}
 with annot_form:
-    saved_quality = saved.get("quality", "good")
-    quality_opts = ["good", "fair", "poor"]
+    # 旧ラベル（good/fair/poor）で保存された値も現行ラベルに正規化して復元する
+    saved_quality = normalize_quality(saved.get("quality"))
     quality = st.radio(
-        "**Quality**", quality_opts,
-        index=quality_opts.index(saved_quality) if saved_quality in quality_opts else 0,
+        "**Quality**", QUALITY_OPTS,
+        index=QUALITY_OPTS.index(saved_quality),
         horizontal=True, key=f"{K}qual",
+        help="Excellent: 網膜表層〜網膜色素上皮が明瞭で構造評価が可能／"
+             "Acceptable: 一部に評価困難な領域があるが全体として構造評価可能／"
+             "Poor: 大部分で評価困難で構造評価ができない（所見は生成されません）",
     )
+    if quality == "Poor":
+        st.caption(
+            "⚠️ Poor では所見を出力せず、固定文 "
+            f"“{CAPTION_UNUSABLE}” のみになります。"
+        )
 
     st.markdown("---")
 
