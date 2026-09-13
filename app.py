@@ -887,10 +887,15 @@ if quality_filter != "All":
 if "idx" not in st.session_state:
     st.session_state.idx = 0
 
-# 絞り込みを変えると件数が変わるため、直前に見ていた画像を可能な限り維持する
-_prev_img = st.session_state.get("_last_image")
-if _prev_img in images:
-    st.session_state.idx = images.index(_prev_img)
+# 絞り込みを変えたときだけ、直前に見ていた画像を可能な限り維持する。
+# 毎回やると Prev/Next で進めた idx を巻き戻してしまうので、
+# フィルタの値が実際に変わった描画に限定する。
+_filter_sig = (image_set, quality_filter)
+if st.session_state.get("_filter_sig") != _filter_sig:
+    _prev_img = st.session_state.get("_last_image")
+    if _prev_img in images:
+        st.session_state.idx = images.index(_prev_img)
+    st.session_state["_filter_sig"] = _filter_sig
 
 # 画像セット切替で件数が減ったとき、idx が範囲外にならないよう丸める
 if st.session_state.idx > total - 1:
