@@ -430,7 +430,7 @@ FULLSPELL = {
     "hard exudates": "hard exudates",
     "SRF": "subretinal fluid (SRF)",
     "subretinal hemorrhage": "subretinal hemorrhage",
-    "serous PED": "serous pigment epithelial detachment (serous PED)",
+    "PED": "pigment epithelial detachment (PED)",
     "SHRM": "subretinal hyperreflective material (SHRM)",
     "EZ disruption": "ellipsoid zone (EZ) disruption",
     "outer atrophy": "outer retinal atrophy",
@@ -519,6 +519,17 @@ def _category_to_layer(cat_name):
         return "choroid"
     return None
 
+# 所見名を変更したときの旧名→新名。保存済みデータを読む側で吸収するので、
+# シートを書き換えなくても過去データがそのまま扱える。
+FINDING_RENAME = {
+    # 陰性側が "no PED"（漿液性に限定しない）なので、肯定・否定で粒度を揃える
+    "serous PED": "PED",
+}
+
+def normalize_finding(name):
+    return FINDING_RENAME.get(name, name)
+
+
 def _collect_findings_by_layer(data):
     """所見を層ごとに集約（層内・全体とも重複除去、順序維持）。戻り値: {layer: [findings...]}"""
     loc_findings = data.get("L1_loc_findings", {})
@@ -532,6 +543,7 @@ def _collect_findings_by_layer(data):
             if layer is None:
                 continue
             for f in (findings_list or []):
+                f = normalize_finding(f)
                 if f and f != "other" and f not in seen_global:
                     seen_global.add(f)
                     by_layer[layer].append(f)
@@ -612,7 +624,7 @@ FOVEA_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
     "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
-    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED"],
+    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "PED"],
     "Outer retina-2":   ["SHRM", "EZ disruption", "outer atrophy", "drusen"],
 }
 
@@ -620,7 +632,7 @@ EXTRAFOVEA_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
     "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
-    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED"],
+    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "PED"],
     "Outer retina-2":   ["SHRM", "EZ disruption", "outer atrophy", "drusen"],
     "Choroid":          ["choroidal thickening", "choroidal thinning"],
 }
@@ -631,7 +643,7 @@ FINDING_CATEGORIES = {
     "VRI":              ["PVD", "ERM", "VMT", "VH"],
     "Intraretinal-1":   ["IRF", "hemorrhage", "retinal thickening", "tractional thickening"],
     "Intraretinal-2":   ["inner thinning", "hyperreflective foci", "hard exudates"],
-    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "serous PED"],
+    "Outer retina-1":   ["SRF", "subretinal hemorrhage", "PED"],
     "Outer retina-2":   ["SHRM", "EZ disruption", "outer atrophy", "drusen"],
     "Choroid":          ["choroidal thickening", "choroidal thinning"],
 }
@@ -643,7 +655,7 @@ NEG_FINDINGS = ["no SRF", "no IRF", "no PED", "EZ intact", "no ERM"]
 POS_TO_NEG = {
     "SRF": "no SRF",
     "IRF": "no IRF",
-    "serous PED": "no PED",
+    "PED": "no PED",
     "EZ disruption": "EZ intact",
     "ERM": "no ERM",
 }
@@ -660,6 +672,7 @@ def reconcile_annotation(loc_findings, neg_checked, l2, mgmt):
         if isinstance(loc_data, dict):
             for finds in loc_data.values():
                 for f in (finds or []):
+                    f = normalize_finding(f)
                     if f and f != "other":
                         positives.add(f)
     has_findings = len(positives) > 0
@@ -1029,6 +1042,8 @@ for _loc_key, _loc_data in saved_loc_findings.items():
     for _cat, _finds in _loc_data.items():
         merged = saved_unified.setdefault(_cat, [])
         for _f in (_finds or []):
+            # 旧名（serous PED など）で保存された値も現行のチェックボックスに復元する
+            _f = normalize_finding(_f)
             if _f not in merged:
                 merged.append(_f)
 
