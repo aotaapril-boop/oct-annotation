@@ -181,6 +181,8 @@ HEADER_ROW = [
     "VRI", "intraretinal", "outer_retina", "choroid",
     "negative_findings",
     "L2_abnormality", "L3_management", "caption", "auto_caption",
+    # auto_caption と同じ内容を構造化したもの（学習パイプラインにそのまま渡せる）
+    "auto_JSON",
     "raw_json",
 ]
 
@@ -408,6 +410,7 @@ def flatten_to_row(data):
 
     row["caption"] = data.get("caption", "")
     row["auto_caption"] = generate_caption(data)
+    row["auto_JSON"] = generate_auto_json(data)
     row["raw_json"] = json.dumps(data, ensure_ascii=False)
     return row
 
@@ -617,6 +620,59 @@ def generate_caption(data):
         sentences.append("Treatment may be considered.")
 
     return " ".join(sentences)
+
+
+# 層キー → JSON でのキー名（UI都合の名前を出さず、解剖学的な名前で書く）
+LAYER_JSON_KEY = {
+    "VRI":          "vitreoretinal_interface",
+    "intraretinal": "inner_retina",
+    "outer_retina": "outer_retina",
+    "choroid":      "choroid",
+}
+
+def generate_auto_json(data):
+    """auto_caption と同じ内容を構造化した JSON を返す（文字列）。
+
+    キャプションが文で述べていることを、そのまま機械可読にしたもの。
+    生成規則は generate_caption と一対一に対応させる：
+      - Poor（unusable）なら usable:false と refusal 文だけ。所見は一切入れない
+      - usable なら画質には触れず、所見・陰性所見・L2・L3 を入れる
+      - L2 は所見が無いときだけ意味を持つ（キャプションでもそのときだけ書く）
+    所見名はキャプションと揃えてフルスペル(略語)にする。
+    """
+    by_layer = _collect_findings_by_layer(data)
+    has_findings = any(by_layer[layer] for layer in LAYER_ORDER)
+    quality = (data.get("quality") or "").strip().lower()
+
+    if quality in QUALITY_UNUSABLE:
+        out = {
+            "usable": False,
+            "reason": "insufficient_image_quality",
+            "caption": CAPTION_UNUSABLE,
+        }
+        return json.dumps(out, ensure_ascii=False)
+
+    findings = {}
+    for layer in LAYER_ORDER:
+        items = by_layer[layer]
+        if items:
+            findings[LAYER_JSON_KEY[layer]] = [_full(f) for f in items]
+
+    neg = [NEG_FULLSPELL.get(x, x) for x in (data.get("L1_neg") or []) if x and x.strip()]
+
+    out = {
+        "usable": True,
+        "findings": findings,                 # 所見が無い層はキーごと出さない
+        "negative_findings": neg,
+        "management": (data.get("L3_mgmt") or "").strip() or None,
+        "caption": generate_caption(data),    # 突き合わせ用に本文も持たせる
+    }
+    # 所見が無いときだけ L2 を入れる（キャプションと同じ扱い）
+    if not has_findings:
+        out["abnormality"] = (data.get("L2") or "").strip() or None
+
+    return json.dumps(out, ensure_ascii=False)
+
 
 # ─── Findings definitions ────────────────────────────────────
 
