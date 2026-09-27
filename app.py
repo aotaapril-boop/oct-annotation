@@ -635,10 +635,16 @@ def generate_auto_json(data):
 
     キャプションが文で述べていることを、そのまま機械可読にしたもの。
     生成規則は generate_caption と一対一に対応させる：
-      - Poor（unusable）なら usable:false と refusal 文だけ。所見は一切入れない
+      - Poor（unusable）なら usable:false と reason だけ。所見は一切入れない
       - usable なら画質には触れず、所見・陰性所見・L2・L3 を入れる
       - L2 は所見が無いときだけ意味を持つ（キャプションでもそのときだけ書く）
     所見名はキャプションと揃えてフルスペル(略語)にする。
+
+    ★caption 本文は入れない。
+      「キャプションで学習」と「JSONで学習」を比較する実験を行うため、
+      2条件の教師データは排他でなければならない。JSON に caption を含めると
+      条件Bが条件Aを包含し、差が構造化の効果なのか情報量の差なのか
+      切り分けられなくなる。文が必要なときは auto_caption 列を参照する。
     """
     by_layer = _collect_findings_by_layer(data)
     has_findings = any(by_layer[layer] for layer in LAYER_ORDER)
@@ -648,7 +654,6 @@ def generate_auto_json(data):
         out = {
             "usable": False,
             "reason": "insufficient_image_quality",
-            "caption": CAPTION_UNUSABLE,
         }
         return json.dumps(out, ensure_ascii=False)
 
@@ -665,7 +670,6 @@ def generate_auto_json(data):
         "findings": findings,                 # 所見が無い層はキーごと出さない
         "negative_findings": neg,
         "management": (data.get("L3_mgmt") or "").strip() or None,
-        "caption": generate_caption(data),    # 突き合わせ用に本文も持たせる
     }
     # 所見が無いときだけ L2 を入れる（キャプションと同じ扱い）
     if not has_findings:
