@@ -635,7 +635,7 @@ def generate_auto_json(data):
 
     キャプションが文で述べていることを、そのまま機械可読にしたもの。
     生成規則は generate_caption と一対一に対応させる：
-      - Poor（unusable）なら usable:false と reason だけ。所見は一切入れない
+      - Poor（unusable）なら {"usable": false} だけ。所見も理由も入れない
       - usable なら画質には触れず、所見・陰性所見・L2・L3 を入れる
       - L2 は所見が無いときだけ意味を持つ（キャプションでもそのときだけ書く）
     所見名はキャプションと揃えてフルスペル(略語)にする。
@@ -651,11 +651,10 @@ def generate_auto_json(data):
     quality = (data.get("quality") or "").strip().lower()
 
     if quality in QUALITY_UNUSABLE:
-        out = {
-            "usable": False,
-            "reason": "insufficient_image_quality",
-        }
-        return json.dumps(out, ensure_ascii=False)
+        # usable:false になるのは quality が Poor のときだけなので、
+        # 理由を持たせても false から一意に決まり情報量がない。
+        # 「所見を出さない」という判断だけを教師信号にする。
+        return json.dumps({"usable": False}, ensure_ascii=False)
 
     findings = {}
     for layer in LAYER_ORDER:
