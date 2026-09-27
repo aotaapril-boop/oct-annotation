@@ -637,7 +637,7 @@ def generate_auto_json(data):
     生成規則は generate_caption と一対一に対応させる：
       - Poor（unusable）なら {"usable": false} だけ。所見も理由も入れない
       - usable なら画質には触れず、所見・陰性所見・L2・L3 を入れる
-      - L2 は所見が無いときだけ意味を持つ（キャプションでもそのときだけ書く）
+      - L2 は usable なら常に入れる（スキーマを一定にするため）
     所見名はキャプションと揃えてフルスペル(略語)にする。
 
     ★caption 本文は入れない。
@@ -668,16 +668,20 @@ def generate_auto_json(data):
     # "no abnormality" はキャプションでは文にしないので JSON にも入れない
     # （入れると JSON 側だけ情報が多くなり、文 vs 構造の比較が不公平になる）。
     mgmt = (data.get("L3_mgmt") or "").strip()
+
+    # abnormality は usable なら常に入れる。
+    # キャプションは「所見があれば異常は自明」として文を省くが、それは自然言語の
+    # 冗長性排除であって、構造化データでは逆にスキーマが不統一になり扱いにくい。
+    # abnormal は findings が空でないことから導出できる値なので、常に持たせても
+    # キャプションにない情報が増えるわけではない（等価性は保たれる）。
     out = {
         "usable": True,
+        "abnormality": (data.get("L2") or "").strip() or None,
         "findings": findings,                 # 所見が無い層はキーごと出さない
         "negative_findings": neg,
     }
     if mgmt in ("observation", "further exam", "treatment"):
         out["management"] = mgmt
-    # 所見が無いときだけ L2 を入れる（キャプションと同じ扱い）
-    if not has_findings:
-        out["abnormality"] = (data.get("L2") or "").strip() or None
 
     return json.dumps(out, ensure_ascii=False)
 
