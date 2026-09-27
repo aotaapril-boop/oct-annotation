@@ -664,12 +664,17 @@ def generate_auto_json(data):
 
     neg = [NEG_FULLSPELL.get(x, x) for x in (data.get("L1_neg") or []) if x and x.strip()]
 
+    # 方針は、キャプションが文を出すものだけを入れる。
+    # "no abnormality" はキャプションでは文にしないので JSON にも入れない
+    # （入れると JSON 側だけ情報が多くなり、文 vs 構造の比較が不公平になる）。
+    mgmt = (data.get("L3_mgmt") or "").strip()
     out = {
         "usable": True,
         "findings": findings,                 # 所見が無い層はキーごと出さない
         "negative_findings": neg,
-        "management": (data.get("L3_mgmt") or "").strip() or None,
     }
+    if mgmt in ("observation", "further exam", "treatment"):
+        out["management"] = mgmt
     # 所見が無いときだけ L2 を入れる（キャプションと同じ扱い）
     if not has_findings:
         out["abnormality"] = (data.get("L2") or "").strip() or None
